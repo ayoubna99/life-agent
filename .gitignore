@@ -1,0 +1,17 @@
+# secrets and local state
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/
+node_modules/
+*.log
+# Android Studio / Gradle (the app lives in app/)
+app/build/
+app/.gradle/
+.gradle/
+local.properties
+*.keystore
+*.jks
+.idea/
+.DS_Store

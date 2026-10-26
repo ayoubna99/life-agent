@@ -1,0 +1,6 @@
+# Minimal Supabase config for the hosted project.
+project_id = "life-agent"
+
+[functions.agent]
+# Callers must send a valid Supabase JWT (an anonymous sign-in is enough).
+verify_jwt = true
