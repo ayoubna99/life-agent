@@ -10,6 +10,7 @@ export interface MuseConfig {
   apiKey: string;
   model: string;
   timeoutMs?: number;
+  maxTokens?: number;
 }
 
 export interface ToolCall {
@@ -84,7 +85,13 @@ export async function callMuse(
     res = await fetchImpl(`${cfg.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
-      body: JSON.stringify({ model: cfg.model, messages, tools, temperature: 0.4 }),
+      body: JSON.stringify({
+        model: cfg.model,
+        messages,
+        ...(tools.length ? { tools } : {}),
+        ...(cfg.maxTokens ? { max_tokens: cfg.maxTokens } : {}),
+        temperature: 0.4,
+      }),
       signal: controller.signal,
     });
   } catch (e) {

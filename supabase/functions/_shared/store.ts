@@ -3,6 +3,8 @@
 
 import type { ChatMessage } from './muse.ts';
 import type { PlanData } from './plan.ts';
+import { toHHMM, toMinutes } from './profile.ts';
+import type { Profile } from './profile.ts';
 import type { Mode } from './prompt.ts';
 
 export class StoreError extends Error {
@@ -28,6 +30,8 @@ export interface SavedPlan {
 export interface Store {
   /** Counts one agent request for today (UTC) and returns how many there have been. */
   bumpQuota(): Promise<number>;
+  /** The counter shared by every user for today (see the global_quota migration). */
+  bumpGlobalQuota(): Promise<number>;
   getConversation(id: string): Promise<{ id: string; kind: Mode } | null>;
   createConversation(kind: Mode): Promise<string>;
   loadMessages(conversationId: string): Promise<ChatMessage[]>;
@@ -39,6 +43,22 @@ export interface Store {
   upsertUsage(rows: UsageRow[]): Promise<void>;
   /** Stores a markdown file for this user and returns a link that works for a week. */
   saveMaterial(fileName: string, markdown: string): Promise<string>;
+  getProfile(): Promise<Profile>;
+  /** Saves only the fields in `patch`. */
+  saveProfile(patch: Partial<Profile>): Promise<void>;
+  /** The bytes of a file the user uploaded (path is "<user id>/<file>"), or null if it is not there. */
+  downloadUpload(path: string, maxBytes: number): Promise<Uint8Array | null>;
+  /** Removes an uploaded file once it has been read (best effort: a failure never stops the request). */
+  deleteUpload(path: string): Promise<void>;
+  saveDocument(doc: { name: string; text: string; pages: number }): Promise<string>;
+  getDocument(id: string): Promise<StoredDocument | null>;
+}
+
+export interface StoredDocument {
+  id: string;
+  name: string;
+  pages: number;
+  text: string;
 }
 
 export interface RestConfig {
@@ -86,6 +106,12 @@ export class RestStore implements Store {
 
   async bumpQuota(): Promise<number> {
     const n = await this.rest('quota', 'rpc/bump_quota', { method: 'POST', json: {} });
+    if (typeof n !== 'number') throw new StoreError('quota', 0);
+    return n;
+  }
+
+  async bumpGlobalQuota(): Promise<number> {
+    const n = await this.rest('quota', 'rpc/bump_global_quota', { method: 'POST', json: {} });
     if (typeof n !== 'number') throw new StoreError('quota', 0);
     return n;
   }
@@ -172,5 +198,76 @@ export class RestStore implements Store {
     })) as { signedURL?: string } | null;
     if (!signed?.signedURL) throw new StoreError('material', 0);
     return `${this.c.supabaseUrl}/storage/v1${signed.signedURL}`;
+  }
+
+  async getProfile(): Promise<Profile> {
+    const rows = (await this.rest('profile', 'profiles?select=wake_minute,sleep_minute,distracting_apps,focus&limit=1')) as {
+      wake_minute: number | null;
+      sleep_minute: number | null;
+      distracting_apps: string[] | null;
+      focus: string | null;
+    }[];
+    const r = rows[0];
+    const profile: Profile = { apps: r?.distracting_apps ?? [] };
+    if (typeof r?.wake_minute === 'number') profile.wake = toHHMM(r.wake_minute);
+    if (typeof r?.sleep_minute === 'number') profile.sleep = toHHMM(r.sleep_minute);
+    if (r?.focus) profile.focus = r.focus;
+    return profile;
+  }
+
+  async saveProfile(patch: Partial<Profile>): Promise<void> {
+    const row: Record<string, unknown> = { user_id: this.c.userId };
+    if (patch.wake !== undefined) row.wake_minute = toMinutes(patch.wake);
+    if (patch.sleep !== undefined) row.sleep_minute = toMinutes(patch.sleep);
+    if (patch.apps !== undefined) row.distracting_apps = patch.apps;
+    if (patch.focus !== undefined) row.focus = patch.focus;
+    await this.rest('profile', 'profiles?on_conflict=user_id', {
+      method: 'POST',
+      json: row,
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    });
+  }
+
+  async downloadUpload(path: string, maxBytes: number): Promise<Uint8Array | null> {
+    const safe = path.split('/').map(encodeURIComponent).join('/');
+    let res: Response;
+    try {
+      res = await this.f(`${this.c.supabaseUrl}/storage/v1/object/uploads/${safe}`, {
+        headers: { apikey: this.c.apikey, Authorization: `Bearer ${this.c.jwt}` },
+      });
+    } catch {
+      throw new StoreError('upload', 0);
+    }
+    if (res.status === 400 || res.status === 404) return null;
+    if (!res.ok) throw new StoreError('upload', res.status);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return bytes.length > maxBytes ? null : bytes;
+  }
+
+  async deleteUpload(path: string): Promise<void> {
+    const safe = path.split('/').map(encodeURIComponent).join('/');
+    try {
+      await this.f(`${this.c.supabaseUrl}/storage/v1/object/uploads/${safe}`, {
+        method: 'DELETE',
+        headers: { apikey: this.c.apikey, Authorization: `Bearer ${this.c.jwt}` },
+      });
+    } catch {
+      // The file stays until the user's data is deleted; nothing else depends on it.
+    }
+  }
+
+  async saveDocument(doc: { name: string; text: string; pages: number }): Promise<string> {
+    const rows = (await this.rest('document', 'documents?select=id', {
+      method: 'POST',
+      json: { user_id: this.c.userId, name: doc.name, text: doc.text, pages: doc.pages },
+      headers: { Prefer: 'return=representation' },
+    })) as { id: string }[];
+    if (!rows?.[0]?.id) throw new StoreError('document', 0);
+    return rows[0].id;
+  }
+
+  async getDocument(id: string): Promise<StoredDocument | null> {
+    const rows = (await this.rest('document', `documents?id=eq.${encodeURIComponent(id)}&select=id,name,pages,text&limit=1`)) as StoredDocument[];
+    return rows[0] ?? null;
   }
 }

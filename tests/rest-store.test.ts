@@ -93,3 +93,54 @@ test('a failing call is a StoreError with the status only', async () => {
   const down = new RestStore({ supabaseUrl: SUPABASE_URL, apikey: 'k', jwt: 'a.b.c', userId: USER, fetchImpl: (async () => { throw new Error('boom'); }) as unknown as typeof fetch });
   await assert.rejects(down.getPlan('2026-10-27'), (e: unknown) => e instanceof StoreError && e.status === 0);
 });
+
+test('settings are read as times and saved only for the fields sent', async () => {
+  const { s, seen } = store(() => json([{ wake_minute: 420, sleep_minute: 1410, distracting_apps: ['Instagram'], focus: 'my thesis' }]));
+  assert.deepEqual(await s.getProfile(), { wake: '07:00', sleep: '23:30', apps: ['Instagram'], focus: 'my thesis' });
+  await s.saveProfile({ sleep: '22:45' });
+  assert.match(seen[1].url, /profiles\?on_conflict=user_id$/);
+  assert.equal(seen[1].headers.Prefer, 'resolution=merge-duplicates,return=minimal');
+  assert.deepEqual(seen[1].body, { user_id: USER, sleep_minute: 1365 });
+  await s.saveProfile({ apps: ['TikTok'], focus: '' });
+  assert.deepEqual(seen[2].body, { user_id: USER, distracting_apps: ['TikTok'], focus: '' });
+  const { s: empty } = store(() => json([]));
+  assert.deepEqual(await empty.getProfile(), { apps: [] });
+});
+
+test('uploads are downloaded with the caller token, and a missing or oversize file is just null', async () => {
+  const { s, seen } = store(() => new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
+  assert.deepEqual([...(await s.downloadUpload(`${USER}/my file.pdf`, 10))!], [1, 2, 3]);
+  assert.equal(seen[0].url, `${SUPABASE_URL}/storage/v1/object/uploads/${USER}/my%20file.pdf`);
+  assert.equal(seen[0].headers.Authorization, 'Bearer tok.en.sig');
+  assert.equal(await s.downloadUpload(`${USER}/a.pdf`, 2), null, 'bigger than the limit');
+  const { s: gone } = store(() => new Response('{}', { status: 400 }));
+  assert.equal(await gone.downloadUpload(`${USER}/a.pdf`, 10), null);
+  const { s: broken } = store(() => new Response('', { status: 500 }));
+  await assert.rejects(broken.downloadUpload(`${USER}/a.pdf`, 10), (e: unknown) => e instanceof StoreError && e.status === 500);
+});
+
+test('documents are stored once and read back by id', async () => {
+  const { s, seen } = store((x) => (x.method === 'POST' ? json([{ id: 'doc-1' }]) : json([{ id: 'doc-1', name: 'n.pdf', pages: 2, text: 'hello' }])));
+  assert.equal(await s.saveDocument({ name: 'n.pdf', text: 'hello', pages: 2 }), 'doc-1');
+  assert.deepEqual(seen[0].body, { user_id: USER, name: 'n.pdf', text: 'hello', pages: 2 });
+  assert.deepEqual(await s.getDocument('doc-1'), { id: 'doc-1', name: 'n.pdf', pages: 2, text: 'hello' });
+  assert.match(seen[1].url, /documents\?id=eq\.doc-1&select=id,name,pages,text&limit=1$/);
+});
+
+test('deleting an upload uses the caller token and never throws', async () => {
+  const { s, seen } = store(() => new Response('', { status: 200 }));
+  await s.deleteUpload(`${USER}/my file.wav`);
+  assert.equal(seen[0].method, 'DELETE');
+  assert.equal(seen[0].url, `${SUPABASE_URL}/storage/v1/object/uploads/${USER}/my%20file.wav`);
+  assert.equal(seen[0].headers.Authorization, 'Bearer tok.en.sig');
+  const down = new RestStore({ supabaseUrl: SUPABASE_URL, apikey: 'k', jwt: 'a.b.c', userId: USER, fetchImpl: (async () => { throw new Error('boom'); }) as unknown as typeof fetch });
+  await down.deleteUpload(`${USER}/a.wav`);
+});
+
+test('the shared counter is read from its own database function', async () => {
+  const { s, seen } = store(() => json(412));
+  assert.equal(await s.bumpGlobalQuota(), 412);
+  assert.match(seen[0].url, /rpc\/bump_global_quota$/);
+  const { s: broken } = store(() => json(null));
+  await assert.rejects(broken.bumpGlobalQuota(), StoreError);
+});

@@ -67,6 +67,14 @@ test('every failure has its own status and a code, and never leaks the key or th
   assert.equal(over.status, 429);
   assert.equal((await over.json()).error.code, 'daily_limit_reached');
 
+  const shared = new MemoryStore();
+  const env2 = { ...ENV, AGENT_GLOBAL_DAILY_LIMIT: '2' };
+  await call(chat, { store: shared, replies: [textReply('a')], env: env2 }).res;
+  await call(chat, { store: shared, replies: [textReply('b')], env: env2 }).res;
+  const full2 = await call(chat, { store: shared, replies: [textReply('c')], env: env2 }).res;
+  assert.equal(full2.status, 429);
+  assert.equal((await full2.json()).error.code, 'demo_at_capacity');
+
   const missing = await call({ ...chat, conversation_id: 'c0000000-0000-0000-0000-000000000099' }).res;
   assert.equal(missing.status, 404);
 

@@ -2,7 +2,8 @@ import type { ChatMessage, MuseConfig } from '../supabase/functions/_shared/muse
 import type { PlanData } from '../supabase/functions/_shared/plan.ts';
 import type { Mode } from '../supabase/functions/_shared/prompt.ts';
 import { StoreError } from '../supabase/functions/_shared/store.ts';
-import type { SavedPlan, Store, UsageRow } from '../supabase/functions/_shared/store.ts';
+import type { Profile } from '../supabase/functions/_shared/profile.ts';
+import type { SavedPlan, Store, StoredDocument, UsageRow } from '../supabase/functions/_shared/store.ts';
 
 export const SUPABASE_URL = 'https://proj.supabase.co';
 export const USER = '00000000-0000-0000-0000-00000000000a';
@@ -16,6 +17,9 @@ export class MemoryStore implements Store {
   plans = new Map<string, SavedPlan>();
   usage: UsageRow[] = [];
   materials = new Map<string, string>();
+  profile: Profile = { apps: [] };
+  documents = new Map<string, StoredDocument>();
+  uploads = new Map<string, Uint8Array>();
   failNext: string | null = null;
   private n = 0;
 
@@ -26,8 +30,12 @@ export class MemoryStore implements Store {
     }
   }
 
+  globalQuota = 0;
   async bumpQuota() {
     return ++this.quota;
+  }
+  async bumpGlobalQuota() {
+    return ++this.globalQuota;
   }
   async getConversation(id: string) {
     return this.conversations.get(id) ?? null;
@@ -61,6 +69,29 @@ export class MemoryStore implements Store {
       if (i >= 0) this.usage[i] = r;
       else this.usage.push({ ...r });
     }
+  }
+  async getProfile() {
+    return structuredClone(this.profile);
+  }
+  async saveProfile(patch: Partial<Profile>) {
+    this.profile = { ...this.profile, ...structuredClone(patch) };
+  }
+  async downloadUpload(path: string, maxBytes: number) {
+    const b = this.uploads.get(path);
+    return b && b.length <= maxBytes ? b : null;
+  }
+  deleted: string[] = [];
+  async deleteUpload(path: string) {
+    this.uploads.delete(path);
+    this.deleted.push(path);
+  }
+  async saveDocument(doc: { name: string; text: string; pages: number }) {
+    const id = `d0000000-0000-0000-0000-${String(++this.n).padStart(12, '0')}`;
+    this.documents.set(id, { id, ...doc });
+    return id;
+  }
+  async getDocument(id: string) {
+    return this.documents.get(id) ?? null;
   }
   async saveMaterial(fileName: string, markdown: string) {
     this.materials.set(fileName, markdown);
@@ -110,4 +141,50 @@ export function fakeNet(replies: unknown[], others: Record<string, number | 'net
 export function jwt(claims: Record<string, unknown> = {}): string {
   const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
   return `${b64({ alg: 'ES256', typ: 'JWT' })}.${b64({ sub: USER, role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600, ...claims })}.sig`;
+}
+
+/** A real, minimal PDF with one line of text per page (an empty string gives a page with no text, like a scan). */
+export function makePdf(pages: string[]): Uint8Array {
+  const objs: string[] = [];
+  const kids: string[] = [];
+  objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  const first = 4 + pages.length; // object numbers: 1 catalog, 2 pages, 3 font, then (page, content) pairs
+  pages.forEach((text, i) => {
+    const pageNo = 4 + i * 2;
+    kids.push(`${pageNo} 0 R`);
+    const stream = text ? `BT /F1 14 Tf 72 720 Td (${text.replace(/[()\\]/g, '\\$&')}) Tj ET` : '';
+    objs[pageNo] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${pageNo + 1} 0 R >>`;
+    objs[pageNo + 1] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+  });
+  void first;
+  objs[2] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${pages.length} >>`;
+  objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (let n = 1; n < objs.length; n++) {
+    offsets[n] = out.length;
+    out += `${n} 0 obj\n${objs[n]}\nendobj\n`;
+  }
+  const xref = out.length;
+  out += `xref\n0 ${objs.length}\n0000000000 65535 f \n`;
+  for (let n = 1; n < objs.length; n++) out += `${String(offsets[n]).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(out);
+}
+
+/** The PDF library as the tests load it (Deno loads "npm:unpdf" itself). */
+export const realPdfLoader = () => import('unpdf') as unknown as Promise<import('../supabase/functions/_shared/pdf.ts').PdfLib>;
+
+/** A WAV file of silence (or a quiet tone) with the given format. */
+export function makeWav(opts: { seconds?: number; rate?: number; channels?: number; bits?: number; format?: number; dataSize?: number } = {}): Uint8Array {
+  const { seconds = 2, rate = 24000, channels = 1, bits = 16, format = 1 } = opts;
+  const bytes = Math.round(seconds * rate * channels * (bits / 8));
+  const out = new Uint8Array(44 + bytes);
+  const v = new DataView(out.buffer);
+  const tag = (at: number, t: string) => [...t].forEach((c, i) => (out[at + i] = c.charCodeAt(0)));
+  tag(0, 'RIFF'); v.setUint32(4, 36 + bytes, true); tag(8, 'WAVE'); tag(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, format, true); v.setUint16(22, channels, true); v.setUint32(24, rate, true);
+  v.setUint32(28, (rate * channels * bits) / 8, true); v.setUint16(32, (channels * bits) / 8, true); v.setUint16(34, bits, true);
+  tag(36, 'data'); v.setUint32(40, opts.dataSize ?? bytes, true);
+  return out;
 }

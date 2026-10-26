@@ -5,11 +5,22 @@
 //   node scripts/chat.mjs --fake-usage    first uploads fake Instagram/TikTok usage so the agent has real numbers
 //   node scripts/chat.mjs execute         the morning run: shows the device tool calls and answers "ok" to each
 //
+//   node scripts/chat.mjs --wake 07:00 --sleep 23:30 --apps Instagram,TikTok --focus "my thesis"
+//                                         saves your settings first (what the app asks in its own screens, not in the chat)
+//   node scripts/chat.mjs --attach C:\\path\\lecture.pdf
+//                                         uploads a PDF or .txt/.md and attaches it to your first message
+//   node scripts/chat.mjs --voice C:\\path\\recording.wav
+//                                         transcribes a WAV (mono, 16-bit, 16 or 24 kHz) with Muse Voice Transcribe and sends the text as your first message
+//   node scripts/chat.mjs nudge --app TikTok --used 52 --limit 60 [--now 17:40]
+//                                         asks the agent for the message it would show mid-scroll (uses today's saved plan)
+//
 // Commands while chatting:  /plan  show the saved plan   /quit  leave
 // Needs Node 18 or newer and curl (curl.exe comes with Windows 10/11). Nothing secret is needed here:
 // the Muse Spark key stays in Supabase.
 
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import dns from 'node:dns';
 import readline from 'node:readline';
 
@@ -23,7 +34,11 @@ if (!url || !key) {
   process.exit(1);
 }
 const args = process.argv.slice(2);
-const mode = args.find((a) => ['planning', 'execute', 'review'].includes(a)) ?? 'planning';
+const mode = args.find((a) => ['planning', 'execute', 'review', 'nudge'].includes(a)) ?? 'planning';
+const flag = (name) => {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 && i + 1 < args.length ? args[i + 1] : undefined;
+};
 const fakeUsage = args.includes('--fake-usage');
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -44,6 +59,19 @@ function curlPost(target, headers, body) {
       resolve({ status: Number(stdout.slice(cut + 1)), text: stdout.slice(0, cut) });
     });
     child.stdin.end(body);
+  });
+}
+
+/** Uploads a file with curl (binary body from disk). */
+function curlUpload(target, headers, file) {
+  return new Promise((resolve, reject) => {
+    const a = ['-s', '-S', '--max-time', '120', '-X', 'POST', target, '--data-binary', `@${file}`, '-w', '\n%{http_code}'];
+    for (const [k, v] of Object.entries(headers)) a.push('-H', `${k}: ${v}`);
+    execFile(process.platform === 'win32' ? 'curl.exe' : 'curl', a, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err && !stdout) return reject(new Error(`curl failed: ${stderr || err.message}`));
+      const cut = stdout.lastIndexOf('\n');
+      resolve({ status: Number(stdout.slice(cut + 1)), text: stdout.slice(0, cut) });
+    });
   });
 }
 
@@ -99,6 +127,78 @@ if (fakeUsage) {
   }
   const r = await agent({ action: 'usage', days: rows }); // mode/date are ignored for usage
   console.log(r.status === 200 ? 'Uploaded fake usage for Instagram and TikTok (about 70 and 40 minutes a day).' : `Usage upload failed: ${JSON.stringify(r.json)}`);
+}
+
+// Settings the app would ask for in its own screens.
+const profileSet = {};
+if (flag('wake')) profileSet.wake = flag('wake');
+if (flag('sleep')) profileSet.sleep = flag('sleep');
+if (flag('apps')) profileSet.apps = flag('apps').split(',').map((x) => x.trim()).filter(Boolean);
+if (flag('focus')) profileSet.focus = flag('focus');
+if (Object.keys(profileSet).length) {
+  const r = await agent({ action: 'profile', set: profileSet });
+  console.log(r.status === 200 ? `Saved your settings: ${JSON.stringify(r.json.profile)}` : `Settings failed: ${JSON.stringify(r.json)}`);
+}
+
+// A file the user sends: upload to Storage, then ask the server to read it.
+const attachments = [];
+if (flag('attach')) {
+  const file = flag('attach');
+  if (!fs.existsSync(file)) {
+    console.error(`File not found: ${file}`);
+    process.exit(1);
+  }
+  const uid = signup.json.user?.id;
+  const name = path.basename(file);
+  const objectPath = `${uid}/${Date.now()}-${name.replace(/[^\w.-]+/g, '_')}`;
+  const type = /\.pdf$/i.test(name) ? 'application/pdf' : 'text/plain';
+  const up = await curlUpload(`${url}/storage/v1/object/uploads/${objectPath}`, { apikey: key, Authorization: `Bearer ${token}`, 'Content-Type': type, 'x-upsert': 'true' }, file);
+  if (up.status >= 300) {
+    console.error(`Upload failed (${up.status}): ${up.text.slice(0, 200)}. Was the third migration applied (npx supabase db push)?`);
+    process.exit(1);
+  }
+  const at = await agent({ action: 'attach', path: objectPath, name });
+  if (at.status !== 200) {
+    console.error(`The server could not read the file: ${JSON.stringify(at.json)}`);
+    process.exit(1);
+  }
+  attachments.push(at.json.document_id);
+  console.log(`Attached ${at.json.name}: ${at.json.pages} page(s), ${at.json.chars} characters${at.json.truncated ? ' (cut)' : ''}.`);
+}
+
+// A voice message: upload the recording, let the server turn it into text, use the text as the first message.
+let spoken;
+if (flag('voice')) {
+  const file = flag('voice');
+  if (!fs.existsSync(file)) {
+    console.error(`File not found: ${file}`);
+    process.exit(1);
+  }
+  const objectPath = `${signup.json.user?.id}/${Date.now()}-voice.wav`;
+  const up = await curlUpload(`${url}/storage/v1/object/uploads/${objectPath}`, { apikey: key, Authorization: `Bearer ${token}`, 'Content-Type': 'audio/wav', 'x-upsert': 'true' }, file);
+  if (up.status >= 300) {
+    console.error(`Upload failed (${up.status}): ${up.text.slice(0, 200)}`);
+    process.exit(1);
+  }
+  const t = await agent({ action: 'transcribe', path: objectPath, languages: ['English'] });
+  if (t.status !== 200) {
+    console.error(`Could not transcribe: ${JSON.stringify(t.json)}`);
+    console.error('The recording must be a WAV: mono, 16-bit, 16 or 24 kHz, up to about 5 minutes. Convert with: ffmpeg -i in.m4a -ac 1 -ar 24000 -c:a pcm_s16le out.wav');
+    process.exit(1);
+  }
+  spoken = t.json.text;
+  console.log(`Heard (${Math.round(t.json.duration_ms / 1000)} s): "${spoken}"`);
+}
+
+if (mode === 'nudge') {
+  const used = Number(flag('used') ?? 52);
+  const limit = flag('limit') === undefined ? undefined : Number(flag('limit'));
+  const nowHm = flag('now') ?? `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const reason = limit === undefined || used < limit ? 'approaching' : used === limit ? 'limit' : 'over';
+  const r = await agent({ action: 'nudge', now: nowHm, app: flag('app') ?? 'TikTok', used_minutes: used, ...(limit === undefined ? {} : { limit_minutes: limit }), reason, done: [] });
+  if (r.status !== 200) fail(r);
+  else console.log(`\nOn top of ${flag('app') ?? 'TikTok'} the user would see:\n\n  "${r.json.text}"\n\n(next task: ${r.json.task ?? 'none'})`);
+  process.exit(0);
 }
 
 let conversation;
@@ -175,14 +275,21 @@ if (mode === 'execute') {
 
 console.log(mode === 'review' ? 'Type what happened today; /quit to leave.' : 'Type as the user. The chat ends when the agent saves your plan. /plan shows it, /quit leaves.');
 for (;;) {
-  const line = await ask('\nyou> ');
+  let line;
+  if (spoken) {
+    line = spoken;
+    spoken = undefined;
+    process.stdout.write(`\nyou (voice)> ${line}\n`);
+  } else line = await ask('\nyou> ');
   if (line === null || line.trim() === '/quit') break;
   if (line.trim() === '') continue;
   if (line.trim() === '/plan') {
     await showPlan();
     continue;
   }
-  if (await turn({ type: 'user', text: line })) {
+  const input = { type: 'user', text: line };
+  if (attachments.length) input.attachments = attachments.splice(0);
+  if (await turn(input)) {
     console.log('\n*** The agent saved the plan. ***');
     await showPlan();
     break;

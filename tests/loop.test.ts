@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BadRequest, LIMITS, NotFound, parseChatRequest, QuotaExceeded, runChat } from '../supabase/functions/_shared/loop.ts';
+import { BadRequest, CapacityReached, LIMITS, NotFound, parseChatRequest, QuotaExceeded, runChat } from '../supabase/functions/_shared/loop.ts';
 import type { ChatRequest } from '../supabase/functions/_shared/loop.ts';
 import { MuseError } from '../supabase/functions/_shared/muse.ts';
 import { callsReply, cfg, fakeNet, MemoryStore, SUPABASE_URL, textReply, USER } from './helpers.ts';
@@ -19,7 +19,7 @@ function setup(replies: unknown[], others: Record<string, number | 'network'> = 
   const store = new MemoryStore();
   const net = fakeNet(replies, others);
   const run = (req: ChatRequest) =>
-    runChat(req, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit, fetchImpl: net.fetchImpl, randomId: () => 'abcdef1234567890' });
+    runChat(req, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit, globalLimit: 1000, fetchImpl: net.fetchImpl, randomId: () => 'abcdef1234567890' });
   return { store, net, run };
 }
 
@@ -48,7 +48,7 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(sys.content!, /today: 2026-10-26/);
   assert.match(sys.content!, /plan_date: 2026-10-27/);
   assert.match(sys.content!, /user_language: fr/);
-  assert.deepEqual(names(planning.net), ['get_usage', 'save_plan', 'create_material']);
+  assert.deepEqual(names(planning.net), ['get_usage', 'save_plan', 'create_material', 'fetch_url', 'web_search', 'read_document']);
 
   const execute = setup([textReply('ok')]);
   await execute.run(base({ mode: 'execute' }));
@@ -61,7 +61,7 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(content, /Mode: review/);
   assert.match(content, /review_date: 2026-10-26/);
   assert.match(content, /tasks_missed: \["Gym"\]/);
-  assert.deepEqual(names(review.net), ['get_usage', 'get_plan', 'save_plan', 'create_material']);
+  assert.deepEqual(names(review.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'fetch_url', 'web_search', 'read_document']);
 });
 
 test('the conversation is remembered: the second request sends only the new message and the model sees all of it', async () => {
@@ -282,4 +282,20 @@ test('a client can never smuggle in its own system message or a stored history',
   const { net, run } = setup([textReply('ok')]);
   await run(parsed);
   assert.equal(JSON.stringify(last(net).messages).includes('evil'), false);
+});
+
+test('the shared daily budget stops everyone, before any model call, and a user over their own limit does not spend it', async () => {
+  const { store, net, run } = setup([textReply('a'), textReply('b')]);
+  const limited = (req: ReturnType<typeof base>, globalLimit: number, dailyLimit = 80) =>
+    runChat(req, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit, globalLimit, fetchImpl: net.fetchImpl, randomId: () => 'abcdef1234567890' });
+  await limited(base(), 2);
+  await limited(base(), 2);
+  await assert.rejects(limited(base(), 2), (e: unknown) => e instanceof CapacityReached);
+  assert.equal(net.museRequests.length, 2, 'no model call after the shared limit');
+  assert.equal(store.globalQuota, 3);
+
+  // Over the personal limit: refused as a personal limit and the shared counter is left alone.
+  await assert.rejects(limited(base(), 100, 1), (e: unknown) => e instanceof QuotaExceeded);
+  assert.equal(store.globalQuota, 3);
+  void run;
 });

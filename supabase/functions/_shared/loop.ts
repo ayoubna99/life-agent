@@ -9,6 +9,7 @@ import type { ChatMessage, MuseConfig, ParsedCall } from './muse.ts';
 import { isDate } from './plan.ts';
 import { buildSystemPrompt, knownTool, MODES, toolPlace, toolsFor } from './prompt.ts';
 import type { Mode } from './prompt.ts';
+import type { PdfLoader } from './pdf.ts';
 import type { Store } from './store.ts';
 import { runServerTool } from './tools.ts';
 
@@ -20,6 +21,7 @@ export const LIMITS = {
   maxStoredMessages: 150,
   maxReportItems: 20,
   maxReportChars: 120,
+  maxAttachments: 3,
 };
 
 export class BadRequest extends Error {
@@ -34,6 +36,33 @@ export class QuotaExceeded extends Error {
     super('quota_exceeded');
   }
 }
+/** The whole demo (all users together) has used its daily budget. */
+export class CapacityReached extends Error {
+  constructor() {
+    super('capacity_reached');
+  }
+}
+
+export const DEFAULT_DAILY_LIMIT = 80;
+export const DEFAULT_GLOBAL_LIMIT = 1000;
+
+export interface Limits {
+  dailyLimit: number;
+  globalLimit: number;
+}
+
+/** A positive whole number from a secret, or the default. */
+export function limitFromEnv(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/** Counts one model-backed request against the user's limit, then against the shared one. */
+export async function spendQuota(store: Store, limits: Limits): Promise<void> {
+  if ((await store.bumpQuota()) > limits.dailyLimit) throw new QuotaExceeded();
+  if ((await store.bumpGlobalQuota()) > limits.globalLimit) throw new CapacityReached();
+}
+
 export class NotFound extends Error {
   constructor() {
     super('conversation_not_found');
@@ -41,7 +70,7 @@ export class NotFound extends Error {
 }
 
 export type ChatInput =
-  | { type: 'user'; text: string }
+  | { type: 'user'; text: string; attachments?: string[] }
   | { type: 'tool_results'; results: { tool_call_id: string; content: string }[] };
 
 export interface ChatRequest {
@@ -64,8 +93,11 @@ export interface ChatDeps {
   userId: string;
   supabaseUrl: string;
   dailyLimit: number;
+  globalLimit: number;
   fetchImpl?: typeof fetch;
   randomId?: () => string;
+  searchModel?: string;
+  loadPdf?: PdfLoader;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -91,7 +123,14 @@ export function parseChatRequest(raw: unknown): ChatRequest {
   if (i?.type === 'user') {
     if (typeof i.text !== 'string' || i.text.trim() === '') throw new BadRequest('empty_message');
     if (i.text.length > LIMITS.maxUserChars) throw new BadRequest('message_too_long');
-    input = { type: 'user', text: i.text };
+    let attachments: string[] | undefined;
+    if (i.attachments !== undefined) {
+      if (!Array.isArray(i.attachments) || i.attachments.length > LIMITS.maxAttachments || i.attachments.some((a) => typeof a !== 'string' || !UUID.test(a))) {
+        throw new BadRequest('bad_attachments');
+      }
+      attachments = i.attachments as string[];
+    }
+    input = { type: 'user', text: i.text, ...(attachments ? { attachments } : {}) };
   } else if (i?.type === 'tool_results') {
     const r = i.results;
     if (!Array.isArray(r) || r.length === 0 || r.length > LIMITS.maxResults) throw new BadRequest('bad_tool_results');
@@ -133,7 +172,7 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
   const randomId = deps.randomId ?? (() => crypto.randomUUID());
   const { store } = deps;
 
-  if ((await store.bumpQuota()) > deps.dailyLimit) throw new QuotaExceeded();
+  await spendQuota(store, deps);
 
   let conversationId = req.conversation_id;
   let history: ChatMessage[] = [];
@@ -164,7 +203,13 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
   const pending = pendingCalls(history);
   if (req.input.type === 'user') {
     if (pending.length) throw new BadRequest('tool_results_required');
-    toStore.push({ role: 'user', content: req.input.text });
+    let text = req.input.text;
+    for (const id of req.input.attachments ?? []) {
+      const doc = await store.getDocument(id);
+      if (!doc) throw new BadRequest('attachment_not_found');
+      text += `\n\n[Attached document: "${doc.name.replace(/["\n]/g, ' ')}", ${doc.pages} page(s), document_id=${doc.id}]`;
+    }
+    toStore.push({ role: 'user', content: text });
   } else {
     const want = new Set(pending.map((p) => p.id));
     const got = req.input.results.map((r) => r.tool_call_id);
@@ -178,7 +223,9 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
   await store.appendMessages(conversationId, toStore);
   history.push(...toStore);
 
+  const profile = await store.getProfile();
   const system = buildSystemPrompt({
+    profile,
     mode: req.mode,
     today: req.today,
     planDate: req.date,
@@ -218,6 +265,9 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
         supabaseUrl: deps.supabaseUrl,
         fetchImpl,
         randomId,
+        muse: deps.cfg,
+        searchModel: deps.searchModel,
+        loadPdf: deps.loadPdf,
       });
       if (out.planSaved) planSaved = true;
       answers.push({ role: 'tool', tool_call_id: call.id, content: out.content });

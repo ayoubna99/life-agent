@@ -29,6 +29,11 @@ Android app (Kotlin) ──> Supabase Edge Function "agent" ──> Muse Spark
   saves the plan), *execute* (morning: applies the plan on the phone through device tool calls), *review* (evening:
   compares the plan with real usage and adapts tomorrow's plan).
 - **Real data:** the phone uploads usage summaries (minutes per app per day). The agent reads them with `get_usage`.
+- **Settings asked in the app:** wake and sleep times, distracting apps and focus are saved by the app (`profile`) and
+  handed to the agent as known facts, so the chat never asks for them. The agent estimates task durations itself.
+- **Mid-session nudge:** `nudge` returns one short, personal message about the user's next task while they are on an app.
+- **Voice:** `transcribe` turns a short recording into text with Muse Voice Transcribe, and the text goes into the chat.
+- **Reads the web and documents:** `fetch_url`, `web_search` (Muse's own built-in search, with cited sources) and PDFs or text files the user sends.
 - The Muse Spark key lives only in Supabase secrets. A daily per-user cap protects the credits.
 - Links the model suggests are checked before they are saved; dead or unsafe ones are dropped.
 - See [docs/API.md](docs/API.md) for every request and answer.
@@ -41,6 +46,7 @@ Android app (Kotlin) ──> Supabase Edge Function "agent" ──> Muse Spark
 | `supabase/functions/_shared/` | prompts and tools, Muse Spark client, the agent loop, storage, plan and link checks |
 | `supabase/migrations/` | the Postgres schema with row-level security |
 | `tests/` | unit tests with a scripted model and an in-memory store (no network, no key) |
+| `scripts/chat.mjs` | talk to the deployed agent from a terminal: planning, settings, a PDF, the mid-session nudge |
 | `scripts/smoke.ps1` | runs the whole flow against your Supabase project |
 | `docs/API.md` | the API |
 | `app/` | the Android app (added from day 2) |
@@ -77,7 +83,7 @@ npm test
 
 ## Status
 
-- Done and unit tested (48 tests): the agent loop, the three modes, server and device tools, plan validation, link checks,
+- Done and unit tested (99 tests, including a real PDF read with the real PDF library): the agent loop, the three modes, server and device tools, plan validation, link checks,
   the storage layer's requests, token handling, per-user cap. Both migrations were applied to a local Postgres 16 and
   their security rules checked.
 - Not yet run against the real services: the deployed function with real Muse Spark tool calls (use `scripts/smoke.ps1`).
