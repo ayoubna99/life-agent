@@ -1,0 +1,113 @@
+import type { ChatMessage, MuseConfig } from '../supabase/functions/_shared/muse.ts';
+import type { PlanData } from '../supabase/functions/_shared/plan.ts';
+import type { Mode } from '../supabase/functions/_shared/prompt.ts';
+import { StoreError } from '../supabase/functions/_shared/store.ts';
+import type { SavedPlan, Store, UsageRow } from '../supabase/functions/_shared/store.ts';
+
+export const SUPABASE_URL = 'https://proj.supabase.co';
+export const USER = '00000000-0000-0000-0000-00000000000a';
+export const cfg: MuseConfig = { baseUrl: 'https://muse.example/v1', apiKey: 'sk-secret-key', model: 'muse-test' };
+
+/** An in-memory copy of everything the agent stores. */
+export class MemoryStore implements Store {
+  quota = 0;
+  conversations = new Map<string, { id: string; kind: Mode }>();
+  messages = new Map<string, ChatMessage[]>();
+  plans = new Map<string, SavedPlan>();
+  usage: UsageRow[] = [];
+  materials = new Map<string, string>();
+  failNext: string | null = null;
+  private n = 0;
+
+  private check(op: string) {
+    if (this.failNext === op) {
+      this.failNext = null;
+      throw new StoreError(op, 503);
+    }
+  }
+
+  async bumpQuota() {
+    return ++this.quota;
+  }
+  async getConversation(id: string) {
+    return this.conversations.get(id) ?? null;
+  }
+  async createConversation(kind: Mode) {
+    const id = `c0000000-0000-0000-0000-${String(++this.n).padStart(12, '0')}`;
+    this.conversations.set(id, { id, kind });
+    this.messages.set(id, []);
+    return id;
+  }
+  async loadMessages(id: string) {
+    return structuredClone(this.messages.get(id) ?? []);
+  }
+  async appendMessages(id: string, msgs: ChatMessage[]) {
+    this.check('messages');
+    this.messages.get(id)!.push(...structuredClone(msgs));
+  }
+  async getPlan(date: string) {
+    return this.plans.get(date) ?? null;
+  }
+  async savePlan(date: string, data: PlanData) {
+    this.check('plan');
+    this.plans.set(date, { date, status: 'ready', data: structuredClone(data) });
+  }
+  async getUsage(app: string, since: string) {
+    return this.usage.filter((r) => r.app.toLowerCase() === app.toLowerCase() && r.day >= since).sort((a, b) => b.day.localeCompare(a.day));
+  }
+  async upsertUsage(rows: UsageRow[]) {
+    for (const r of rows) {
+      const i = this.usage.findIndex((u) => u.day === r.day && u.app.toLowerCase() === r.app.toLowerCase());
+      if (i >= 0) this.usage[i] = r;
+      else this.usage.push({ ...r });
+    }
+  }
+  async saveMaterial(fileName: string, markdown: string) {
+    this.materials.set(fileName, markdown);
+    return `${SUPABASE_URL}/storage/v1/object/sign/materials/${USER}/${fileName}?token=t`;
+  }
+}
+
+export const textReply = (text: string) => ({ choices: [{ message: { role: 'assistant', content: text } }] });
+export const callsReply = (...calls: [name: string, args: unknown, id?: string][]) => ({
+  choices: [
+    {
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: calls.map(([name, args, id], i) => ({ id: id ?? `call_${i + 1}`, type: 'function', function: { name, arguments: JSON.stringify(args) } })),
+      },
+    },
+  ],
+});
+
+export interface FakeNet {
+  fetchImpl: typeof fetch;
+  /** Every body sent to the model, parsed. */
+  museRequests: { messages: ChatMessage[]; tools: { function: { name: string } }[]; model: string }[];
+  /** Every other URL that was fetched (link checks). */
+  otherUrls: string[];
+}
+
+/** Muse Spark answers from `replies` in order; any other URL answers from `others` (status by URL, default 200). */
+export function fakeNet(replies: unknown[], others: Record<string, number | 'network'> = {}): FakeNet {
+  const net: FakeNet = { fetchImpl: undefined as unknown as typeof fetch, museRequests: [], otherUrls: [] };
+  let i = 0;
+  net.fetchImpl = (async (url: string, init?: RequestInit) => {
+    if (url.startsWith('https://muse.example/')) {
+      net.museRequests.push(JSON.parse(init!.body as string));
+      if (i >= replies.length) throw new Error('the test scripted fewer Muse Spark replies than were asked for');
+      return new Response(JSON.stringify(replies[i++]), { status: 200 });
+    }
+    net.otherUrls.push(`${init?.method ?? 'GET'} ${url}`);
+    const planned = others[url] ?? 200;
+    if (planned === 'network') throw new TypeError('fetch failed');
+    return new Response('', { status: planned });
+  }) as unknown as typeof fetch;
+  return net;
+}
+
+export function jwt(claims: Record<string, unknown> = {}): string {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  return `${b64({ alg: 'ES256', typ: 'JWT' })}.${b64({ sub: USER, role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600, ...claims })}.sig`;
+}

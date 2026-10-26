@@ -18,31 +18,36 @@ See the git history: the first commit of this repository is dated 26 Oct 2026.
 ## Architecture
 
 ```
-Android app (Kotlin)  ──(messages, tool results)──>  Supabase Edge Function "agent"  ──>  Muse Spark
-   │   ▲                                                    │
-   │   └──────────(text reply or tool calls)───────────────┘
-   ├─ runs the tools on the phone: get_usage, create_task, set_app_limit, schedule_alarm
-   └─ stores plans, messages and usage summaries in Supabase Postgres (row-level security, one user = one anonymous account)
+Android app (Kotlin) ──> Supabase Edge Function "agent" ──> Muse Spark
+   │                         │  server tools: get_usage, get_plan, save_plan, create_material
+   │                         └─ Postgres (plans, messages, usage) + Storage (study sheets), row-level security
+   └─ device tools, run on the phone: create_task, set_app_limit, schedule_alarm
 ```
 
-- The Muse Spark key lives only in Supabase secrets. The app never sees it.
-- The server is stateless per turn: the phone sends the conversation, the function adds the system prompt and
-  calls the model, and answers with text or tool calls. The phone runs the tools and sends the results back.
-- The phone sends **summaries** of real usage (minutes per app per day), never the raw event log.
+- **The server remembers the conversation.** The phone sends only the new message (or the results of device tools).
+- **Three modes, one agent:** *planning* (evening: asks until it has everything, estimates durations, prepares material,
+  saves the plan), *execute* (morning: applies the plan on the phone through device tool calls), *review* (evening:
+  compares the plan with real usage and adapts tomorrow's plan).
+- **Real data:** the phone uploads usage summaries (minutes per app per day). The agent reads them with `get_usage`.
+- The Muse Spark key lives only in Supabase secrets. A daily per-user cap protects the credits.
+- Links the model suggests are checked before they are saved; dead or unsafe ones are dropped.
+- See [docs/API.md](docs/API.md) for every request and answer.
 
 ## Repository layout
 
 | Path | What |
 |---|---|
 | `supabase/functions/agent/` | the Edge Function (HTTP entry point) |
-| `supabase/functions/_shared/` | prompt and tool definitions, Muse Spark client, history validation |
+| `supabase/functions/_shared/` | prompts and tools, Muse Spark client, the agent loop, storage, plan and link checks |
 | `supabase/migrations/` | the Postgres schema with row-level security |
-| `tests/` | unit tests for the agent logic (no network, no key needed) |
+| `tests/` | unit tests with a scripted model and an in-memory store (no network, no key) |
+| `scripts/smoke.ps1` | runs the whole flow against your Supabase project |
+| `docs/API.md` | the API |
 | `app/` | the Android app (added from day 2) |
 
 ## Run the tests
 
-Node 22.18 or newer:
+Node 22.6 or newer (the test script turns on TypeScript support itself):
 
 ```
 npm test
@@ -72,6 +77,9 @@ npm test
 
 ## Status
 
-- Day 1: Edge Function (prompt, tools, Muse Spark client, validation), database schema with row-level security, unit tests.
-- Assumption to confirm: Muse Spark is called as an OpenAI-compatible chat-completions API. If it is not, only
-  `supabase/functions/_shared/muse.ts` changes.
+- Done and unit tested (48 tests): the agent loop, the three modes, server and device tools, plan validation, link checks,
+  the storage layer's requests, token handling, per-user cap. Both migrations were applied to a local Postgres 16 and
+  their security rules checked.
+- Not yet run against the real services: the deployed function with real Muse Spark tool calls (use `scripts/smoke.ps1`).
+- Assumption to confirm: Muse Spark is called as an OpenAI-compatible chat-completions API with tool calling.
+  If it is not, only `supabase/functions/_shared/muse.ts` changes.

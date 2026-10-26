@@ -41,12 +41,26 @@ export type MuseErrorCode = 'not_configured' | 'timeout' | 'upstream_status' | '
 export class MuseError extends Error {
   readonly code: MuseErrorCode;
   readonly status?: number;
+  /** A short reason for the logs: error type and a cleaned message. Never a URL, a key or user text. */
+  readonly detail?: string;
 
-  constructor(code: MuseErrorCode, status?: number) {
-    super(`muse_${code}${status ? `_${status}` : ''}`);
+  constructor(code: MuseErrorCode, status?: number, detail?: string) {
+    super(`muse_${code}${status ? `_${status}` : ''}${detail ? ` (${detail})` : ''}`);
     this.code = code;
     this.status = status;
+    this.detail = detail;
   }
+}
+
+/** Error type plus its message with every URL removed, so the logs say WHY without leaking where. */
+export function describeNetworkError(e: unknown): string {
+  const name = (e as Error)?.name ?? 'Error';
+  const message = String((e as Error)?.message ?? '')
+    .replace(/https?:\/\/\S+/gi, '<url>')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  return message ? `${name}: ${message}` : name;
 }
 
 export function configFromEnv(get: (name: string) => string | undefined): MuseConfig {
@@ -74,7 +88,8 @@ export async function callMuse(
       signal: controller.signal,
     });
   } catch (e) {
-    throw new MuseError((e as Error)?.name === 'AbortError' ? 'timeout' : 'network');
+    if ((e as Error)?.name === 'AbortError') throw new MuseError('timeout');
+    throw new MuseError('network', undefined, describeNetworkError(e));
   } finally {
     clearTimeout(timer);
   }
