@@ -41,9 +41,9 @@ export interface Store {
   /** Minutes per day for one app (any capitalisation), newest first, from `since` (YYYY-MM-DD) on. */
   getUsage(app: string, since: string): Promise<UsageRow[]>;
   upsertUsage(rows: UsageRow[]): Promise<void>;
-  /** Stores a markdown file for this user and returns a link that works for a week. */
+  /** Stores a markdown file for this user and returns a link that works for 3 days (files are deleted after 3 days). */
   saveMaterial(fileName: string, markdown: string): Promise<string>;
-  /** Stores a file the agent made (a PDF or a picture; same private bucket and folder as materials) and returns a link that works for a week. */
+  /** Stores a file the agent made (a PDF or a picture; same private bucket and folder as materials) and returns a link that works for 3 days (files are deleted after 3 days). */
   saveFile(fileName: string, bytes: Uint8Array, contentType: string): Promise<string>;
   getProfile(): Promise<Profile>;
   /** Saves only the fields in `patch`. */
@@ -72,6 +72,9 @@ export interface StoredDocument {
   text: string;
   kind: 'pdf' | 'text' | 'image';
 }
+
+/** Links to the agent's files last as long as the files do (the cleanup function deletes them after 3 days). */
+export const LINK_SECONDS = 3 * 24 * 3600;
 
 export interface RestConfig {
   supabaseUrl: string;
@@ -214,7 +217,7 @@ export class RestStore implements Store {
     });
     const signed = (await this.call('material', `${this.c.supabaseUrl}/storage/v1/object/sign/materials/${path}`, {
       method: 'POST',
-      json: { expiresIn: 7 * 24 * 3600 },
+      json: { expiresIn: LINK_SECONDS },
     })) as { signedURL?: string } | null;
     if (!signed?.signedURL) throw new StoreError('material', 0);
     return `${this.c.supabaseUrl}/storage/v1${signed.signedURL}`;

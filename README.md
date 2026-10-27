@@ -18,7 +18,7 @@ See the git history: the first commit of this repository is dated 26 Oct 2026.
 ## Architecture
 
 ```
-Android app (Kotlin) ──> Supabase Edge Function "agent" ──> Muse Spark
+Android app (Flutter + a little Kotlin) ──> Supabase Edge Function "agent" ──> Muse Spark
    │                         │  server tools: get_usage, get_plan, save_plan, create_material
    │                         └─ Postgres (plans, messages, usage) + Storage (study sheets), row-level security
    └─ device tools, run on the phone: create_task, set_app_limit, schedule_alarm
@@ -51,7 +51,7 @@ Android app (Kotlin) ──> Supabase Edge Function "agent" ──> Muse Spark
 | `scripts/chat.mjs` | talk to the deployed agent from a terminal: planning, settings, a PDF, the mid-session nudge |
 | `scripts/smoke.ps1` | runs the whole flow against your Supabase project |
 | `docs/API.md` | the API |
-| `app/` | the Android app (added from day 2) |
+| `app/` | the Android app: Flutter screens and agent client (`app/lib`, `app/test`), plus the Kotlin that only Android can do (`app/android/app/src/main/kotlin`). See [app/README.md](app/README.md) |
 
 ## Run the tests
 
@@ -85,9 +85,29 @@ npm test
 
 ## Status
 
-- Done and unit tested (126 tests, including a real PDF read with the real PDF library): the agent loop, the three modes, server and device tools, plan validation, link checks,
-  the storage layer's requests, token handling, per-user cap. Both migrations were applied to a local Postgres 16 and
-  their security rules checked.
-- Not yet run against the real services: the deployed function with real Muse Spark tool calls (use `scripts/smoke.ps1`).
+- **Backend, unit tested (132 tests):** the agent loop, the three modes, server and device tools, plan validation, link checks,
+  storage, token handling, per-user and global caps, PDF in and out, photos in and out, voice, cleanup. The migrations were applied
+  to a local Postgres 16 and their security rules checked. Functions ran in the real Deno runtime for the PDF writer and reader.
+- **App, unit and widget tested (69 Dart tests, 29 Kotlin tests):** sign-in, the API client, the chat loop with device tools, chat, voice,
+  files and photos, home, settings, the usage maths, nudge rules and app-name matching.
+- **Not yet run on a phone or against Meta's live API:** real Muse Spark tool calls, `/responses` (web search, photos, scanned PDFs),
+  `/images/generations`, Voice Transcribe, and everything Android-specific (usage stats, alarms, the watcher service and the overlay).
+  The Kotlin glue compiles against the real Android 15 classes but has not run. See [app/README.md](app/README.md).
 - Assumption to confirm: Muse Spark is called as an OpenAI-compatible chat-completions API with tool calling.
   If it is not, only `supabase/functions/_shared/muse.ts` changes.
+
+## Cleanup setup (files older than 3 days are deleted)
+1. `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"` makes a secret. Then
+   `npx supabase secrets set CLEANUP_SECRET=<that secret>`.
+2. `npx supabase db push` (adds the `expired_files` SQL function) and `npx supabase functions deploy cleanup --no-verify-jwt`.
+3. Try it without deleting anything:
+   `curl.exe -X POST https://<ref>.supabase.co/functions/v1/cleanup -H "x-cleanup-secret: <secret>" -H "Content-Type: application/json" -d "{\"dry_run\":true}"`
+4. Run it daily: in the Supabase dashboard enable the extensions `pg_cron` and `pg_net` (Database -> Extensions), then in the SQL editor:
+   ```sql
+   select cron.schedule('cleanup-files', '17 3 * * *', $$
+     select net.http_post(
+       url := 'https://<ref>.supabase.co/functions/v1/cleanup',
+       headers := '{"Content-Type":"application/json","x-cleanup-secret":"<secret>"}'::jsonb,
+       body := '{}'::jsonb);
+   $$);
+   ```

@@ -4,3 +4,7 @@ project_id = "life-agent"
 [functions.agent]
 # Callers must send a valid Supabase JWT (an anonymous sign-in is enough).
 verify_jwt = true
+
+[functions.cleanup]
+# Called by Supabase Cron, which has no user token. The function checks its own secret (x-cleanup-secret) instead.
+verify_jwt = false

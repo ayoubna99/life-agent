@@ -77,13 +77,13 @@ test('the quota counter is read from the database function', async () => {
   await assert.rejects(broken.bumpQuota(), StoreError);
 });
 
-test('materials are uploaded into the user folder and a week-long link comes back', async () => {
+test('materials are uploaded into the user folder and a 3-day link comes back', async () => {
   const { s, seen } = store((x) => (x.url.includes('/object/sign/') ? json({ signedURL: '/object/sign/materials/p?token=abc' }) : json({ Key: 'ok' })));
   const url = await s.saveMaterial('2026-10-27-sheet.md', '# Sheet');
   assert.equal(seen[0].url, `${SUPABASE_URL}/storage/v1/object/materials/${USER}/2026-10-27-sheet.md`);
   assert.equal(seen[0].headers['x-upsert'], 'true');
   assert.equal(seen[0].body, '# Sheet');
-  assert.deepEqual(seen[1].body, { expiresIn: 604800 });
+  assert.deepEqual(seen[1].body, { expiresIn: 259200 });
   assert.equal(url, `${SUPABASE_URL}/storage/v1/object/sign/materials/p?token=abc`);
 });
 

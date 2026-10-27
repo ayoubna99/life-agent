@@ -39,7 +39,7 @@ Send **summaries**, never the raw event log.
   ```
   `content` is a string (JSON is fine). If a tool failed, say so in it: the agent tells the user.
 - `plan_saved: true` means a plan was saved during this request; call `plan` to read it.
-- `artifacts` lists what the agent made during this request for the phone to show: `[{"type":"pdf"|"image"|"markdown","title":"My day card","url":"https://..."}]` (links valid for a week; the file stays in Storage).
+- `artifacts` lists what the agent made during this request for the phone to show: `[{"type":"pdf"|"image"|"markdown","title":"My day card","url":"https://..."}]` (links valid for 3 days; the file stays in Storage).
 
 - A user message may carry `"attachments":["<document id>", ...]` (up to 3, from the `attach` action). The agent
   is told the document names and reads them with `read_document`.
@@ -50,8 +50,8 @@ Send **summaries**, never the raw event log.
 | `get_usage(app, days?)` | server | planning, review | reads the uploaded usage |
 | `get_plan(date)` | server | execute, review | reads the saved plan |
 | `save_plan(wake?, sleep?, tasks[], limits[], note?)` | server | planning, review | validates and stores the plan for `date`; drops dead links |
-| `create_material(title, markdown, format?)` | server | planning, review | writes a study or work sheet as a **PDF** (default, A4, drawn from the markdown: headings, bullets, numbered lists, simple tables) or as `markdown`; stores it in `materials/<user id>/` and returns a link valid for a week. The PDF fonts are Latin only; other scripts show as `?` and the agent is told to use `markdown` instead. Appears in the chat answer's `artifacts` as `pdf` or `markdown` |
-| `create_image(title, prompt, shape?)` | server | planning, review | makes one picture with Muse Image (`square`, `portrait` or `landscape`), stores it in `materials/<user id>/images/` and returns a link valid for a week. Max 1 per request. It also appears in the chat answer's `artifacts` |
+| `create_material(title, markdown, format?)` | server | planning, review | writes a study or work sheet as a **PDF** (default, A4, drawn from the markdown: headings, bullets, numbered lists, simple tables) or as `markdown`; stores it in `materials/<user id>/` and returns a link valid for 3 days. The PDF fonts are Latin only; other scripts show as `?` and the agent is told to use `markdown` instead. Appears in the chat answer's `artifacts` as `pdf` or `markdown` |
+| `create_image(title, prompt, shape?)` | server | planning, review | makes one picture with Muse Image (`square`, `portrait` or `landscape`), stores it in `materials/<user id>/images/` and returns a link valid for 3 days. Max 1 per request. It also appears in the chat answer's `artifacts` |
 | `fetch_url(url, offset?)` | server | planning, review | reads a public web page or PDF (12 000 characters at a time) |
 | `web_search(query)` | server | planning, review | Muse's built-in `web_search` (Responses API, `/responses`): returns `{answer, sources[{title,url}], searched}`. Optional `SEARCH_MODEL` secret |
 | `read_document(document_id, offset?)` | server | planning, review | reads a document the user attached |
@@ -113,3 +113,15 @@ if the call fails, show a local message.
 3. During the day: when the user is on a distracting app near or over the limit, `nudge`.
 4. Morning: `chat` `execute` -> run the device tool calls -> send results -> text.
 5. Next evening: upload `usage`, `chat` `review` with the `report`, which adapts tomorrow's plan.
+
+
+## Automatic cleanup of stored files (function `cleanup`)
+Files the agent makes (PDF sheets, pictures) and any leftover uploads are deleted **3 days** after they were last written, so the
+free storage never fills up. Links to them also last 3 days. Only files in the `materials` and `uploads` buckets are touched.
+The text in the database (documents, plans, messages) is kept.
+
+- `POST /functions/v1/cleanup` with header `x-cleanup-secret: <CLEANUP_SECRET>` and an optional body `{"dry_run":true}` (lists what would go, deletes nothing).
+  Answer: `{"days":3,"dry_run":false,"deleted":{"materials":4,"uploads":1},"total":5}`.
+  Errors: 401 `unauthorized`, 405, 500 `not_configured` (no secret of at least 16 characters, or no service key), 502 `cleanup_failed`.
+- Secrets: `CLEANUP_SECRET` (required), `CLEANUP_DAYS` (optional, default 3). The service role key is provided by Supabase itself.
+- It is called once a day by Supabase Cron (pg_cron + pg_net); see "Cleanup setup" in the README.
