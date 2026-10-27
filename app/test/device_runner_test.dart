@@ -14,6 +14,7 @@ class FakeAlarms implements AlarmScheduler {
     required String id,
     required DateTime at,
     required String message,
+    bool card = false,
   }) async {
     if (allow) {
       set.add((at, message));

@@ -7,6 +7,7 @@
 import { callMuse, MuseError } from './muse.ts';
 import type { ChatMessage, MuseConfig, ParsedCall } from './muse.ts';
 import { isDate } from './plan.ts';
+import { splitSpoken } from './reply.ts';
 import { buildSystemPrompt, knownTool, MODES, toolPlace, toolsFor } from './prompt.ts';
 import type { Mode } from './prompt.ts';
 import type { PdfLoader } from './pdf.ts';
@@ -87,7 +88,7 @@ export interface ChatRequest {
 }
 
 export type ChatResponse =
-  | { type: 'text'; conversation_id: string; text: string; plan_saved: boolean; artifacts: Artifact[] }
+  | { type: 'text'; conversation_id: string; text: string; spoken?: string; plan_saved: boolean; artifacts: Artifact[] }
   | { type: 'tool_calls'; conversation_id: string; calls: { id: string; name: string; args: Record<string, unknown> }[]; plan_saved: boolean; artifacts: Artifact[] };
 
 export interface ChatDeps {
@@ -255,7 +256,9 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
     if (answer.kind === 'text') {
       const msg: ChatMessage = { role: 'assistant', content: answer.text };
       await store.appendMessages(conversationId, [msg]);
-      return { type: 'text', conversation_id: conversationId, text: answer.text, plan_saved: planSaved, artifacts };
+      // The history keeps the full reply (so the model keeps the habit); the person gets the text and the spoken line apart.
+      const { text, spoken } = splitSpoken(answer.text);
+      return { type: 'text', conversation_id: conversationId, text, ...(spoken ? { spoken } : {}), plan_saved: planSaved, artifacts };
     }
 
     // The model may only ask for tools this mode has.

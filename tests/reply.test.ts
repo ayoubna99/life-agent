@@ -33,3 +33,19 @@ test('an answer that is only a link or only reasoning is not turned into nothing
 test('blank lines are tidied after removals', () => {
   assert.equal(cleanReply('A\n\n\n\n\nB   \n\n'), 'A\n\nB');
 });
+
+import { splitSpoken } from '../supabase/functions/_shared/reply.ts';
+
+test('the spoken line is split off the reply, in the forms a model writes it', () => {
+  assert.deepEqual(splitSpoken('Plan saved.\nSPOKEN: Done, sleep well.'), { text: 'Plan saved.', spoken: 'Done, sleep well.' });
+  assert.deepEqual(splitSpoken('Plan saved.\n\n**Spoken:** Done, *sleep* well.\n'), { text: 'Plan saved.', spoken: 'Done, sleep well.' });
+  assert.deepEqual(splitSpoken('Line one\nLine two\n- spoken : All set'), { text: 'Line one\nLine two', spoken: 'All set' });
+  assert.deepEqual(splitSpoken('No spoken line here.'), { text: 'No spoken line here.' });
+});
+
+test('a spoken line in the middle, an empty one, or the only line is not mistaken for the real thing', () => {
+  assert.deepEqual(splitSpoken('SPOKEN: Hi\nMore text after it'), { text: 'SPOKEN: Hi\nMore text after it' });
+  assert.deepEqual(splitSpoken('Done.\nSPOKEN:'), { text: 'Done.' });
+  assert.deepEqual(splitSpoken('SPOKEN: only this'), { text: 'SPOKEN: only this' });
+  assert.equal(splitSpoken(`Ok.\nSPOKEN: ${'x '.repeat(500)}`).spoken!.length <= 400, true);
+});

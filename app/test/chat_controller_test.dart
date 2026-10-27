@@ -34,6 +34,7 @@ class Rig {
           : null,
       keywords: const ['TikTok'],
       maxRecording: const Duration(seconds: 120),
+      minHold: Duration.zero,
     );
   }
 
@@ -267,7 +268,7 @@ void main() {
   );
 
   test(
-    'voice: tap to listen, tap to send; the words become a message and the answer is read aloud',
+    'voice: hold to talk, let go to send; the words become a message and the answer is read aloud',
     () async {
       final server = answering(
         [text('Sure, what time?')],
@@ -276,11 +277,11 @@ void main() {
             : {'saved': 1},
       );
       final rig = Rig(server);
-      await rig.controller.toggleVoice();
+      await rig.controller.startListening();
       expect(rig.controller.recording, isTrue);
       expect(rig.voice.started, isTrue);
       expect(rig.controller.status, contains('Listening'));
-      await rig.controller.toggleVoice();
+      await rig.controller.stopListening();
       expect(rig.controller.recording, isFalse);
       expect(rig.controller.messages.map((m) => m.text), [
         'Study German tomorrow',
@@ -308,14 +309,14 @@ void main() {
     () async {
       final denied = Rig(answering([]));
       denied.voice.allowed = false;
-      await denied.controller.toggleVoice();
+      await denied.controller.startListening();
       expect(denied.controller.recording, isFalse);
       expect(denied.controller.messages.last.text, contains('microphone'));
 
       final silent = Rig(answering([]));
       silent.voice.recording = null;
-      await silent.controller.toggleVoice();
-      await silent.controller.toggleVoice();
+      await silent.controller.startListening();
+      await silent.controller.stopListening();
       expect(silent.controller.messages.last.text, contains('did not hear'));
 
       final noSpeech = Rig(
@@ -329,8 +330,8 @@ void main() {
                 }, 422),
         ),
       );
-      await noSpeech.controller.toggleVoice();
-      await noSpeech.controller.toggleVoice();
+      await noSpeech.controller.startListening();
+      await noSpeech.controller.stopListening();
       expect(noSpeech.controller.messages.last.text, contains('did not hear'));
       expect(noSpeech.controller.busy, isFalse);
     },
@@ -358,8 +359,9 @@ void main() {
       voice: FakeVoice(),
       speaker: FakeSpeaker(),
       maxRecording: const Duration(milliseconds: 20),
+      minHold: Duration.zero,
     );
-    await controller.toggleVoice();
+    await controller.startListening();
     expect(controller.recording, isTrue);
     await Future<void>.delayed(const Duration(milliseconds: 200));
     expect(controller.recording, isFalse);
@@ -399,8 +401,8 @@ void main() {
             : {'saved': 1},
       );
       final rig = Rig(server);
-      await rig.controller.toggleVoice();
-      await rig.controller.toggleVoice();
+      await rig.controller.startListening();
+      await rig.controller.stopListening();
       final shown = rig.controller.messages.last.text;
       expect(shown, isNot(contains('**')));
       expect(shown, isNot(contains('supabase.co')));
@@ -438,11 +440,127 @@ void main() {
         voice: FakeVoice(),
         speaker: speaker,
         voiceSettings: settings,
+        minHold: Duration.zero,
       );
-      await controller.toggleVoice();
-      await controller.toggleVoice();
+      await controller.startListening();
+      await controller.stopListening();
       expect(controller.messages.last.text, 'Sure, what time?');
       expect(speaker.spoken, isEmpty);
+    },
+  );
+
+  test(
+    'a quick tap is not talking: nothing is sent and the person is told to hold the button',
+    () async {
+      final api = newApi(answering([text('x')]));
+      final voice = FakeVoice();
+      final c = ChatController(
+        session: AgentSession(
+          api: api,
+          tools: FakeTools(),
+          mode: 'planning',
+          today: '2026-10-27',
+          date: '2026-10-28',
+        ),
+        api: api,
+        picks: FakePicks(),
+        voice: voice,
+        speaker: FakeSpeaker(),
+      ); // the real 450 ms minimum
+      await c.startListening();
+      await c.stopListening();
+      expect(c.recording, isFalse);
+      expect(c.messages.single.text, contains('Hold the button'));
+      expect(c.messages.single.who, Who.note);
+    },
+  );
+
+  test(
+    'sliding away cancels: the recording is thrown away and nothing is sent',
+    () async {
+      final rig = Rig(answering([text('x')]));
+      await rig.controller.startListening();
+      await rig.controller.stopListening(cancel: true);
+      expect(rig.controller.recording, isFalse);
+      expect(rig.controller.messages, isEmpty);
+      expect(rig.server.agentCalls, isEmpty);
+    },
+  );
+
+  test(
+    'letting go before the microphone has even started leaves nothing listening',
+    () async {
+      final rig = Rig(answering([text('x')]));
+      final starting = rig.controller.startListening();
+      await rig.controller.stopListening(); // the finger was already up
+      await starting;
+      expect(rig.controller.recording, isFalse);
+      expect(rig.controller.busy, isFalse);
+      expect(
+        rig.server.agentCalls.where((c) => c.json['action'] == 'chat'),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'when the agent wrote a spoken line that is what is said, not a cut of the screen text',
+    () async {
+      final server = answering(
+        [
+          {
+            ...text(
+              'Your plan is ready:\n- 10:00 Study German (60 min)\n- 16:00 Gym (45 min)',
+            ),
+            'spoken': 'Done, tomorrow starts with German at ten. Sleep well.',
+          },
+        ],
+        other: (r) => r.action == 'transcribe'
+            ? {'text': 'Plan tomorrow', 'duration_ms': 1}
+            : {'saved': 1},
+      );
+      final rig = Rig(server);
+      await rig.controller.startListening();
+      await rig.controller.stopListening();
+      expect(rig.controller.messages.last.text, contains('10:00 Study German'));
+      expect(rig.speaker.spoken, [
+        'Done, tomorrow starts with German at ten. Sleep well.',
+      ]);
+    },
+  );
+
+  test(
+    'a saved plan schedules the good-morning reminder once per save, and a failure there never loses the plan',
+    () async {
+      var saves = 0;
+      final api = newApi(
+        answering([
+          text('Saved.', planSaved: true),
+          text('Saved again.', planSaved: true),
+        ], other: (_) => {'saved': 1}),
+      );
+      final c = ChatController(
+        session: AgentSession(
+          api: api,
+          tools: FakeTools(),
+          mode: 'planning',
+          today: '2026-10-27',
+          date: '2026-10-28',
+        ),
+        api: api,
+        picks: FakePicks(),
+        voice: FakeVoice(),
+        speaker: FakeSpeaker(),
+        onPlanSaved: () async {
+          saves++;
+          if (saves == 2) throw StateError('alarms not allowed');
+        },
+      );
+      await c.send('yes');
+      await c.send('yes again');
+      expect(saves, 2);
+      expect(c.planSaved, isTrue);
+      expect(c.messages.last.text, 'Saved again.');
     },
   );
 }

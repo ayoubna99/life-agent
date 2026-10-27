@@ -15,6 +15,7 @@ class Env {
   Env({
     Map<String, Object?>? profile,
     Map<String, Object?>? plan,
+    this.todayPlan,
     this.hour = 20,
     this.offline = false,
   }) {
@@ -30,7 +31,9 @@ class Env {
             'profile': profile ?? {'apps': <String>[]},
           });
         case 'plan':
-          return jsonResponse({'plan': plan});
+          return jsonResponse({
+            'plan': r.json['date'] == '2026-10-27' ? todayPlan : plan,
+          });
         case 'usage':
           return jsonResponse({'saved': 1});
         case 'chat':
@@ -57,6 +60,7 @@ class Env {
 
   final int hour;
   final bool offline;
+  final Map<String, Object?>? todayPlan;
   late final FakeServer server;
   late final AppServices services;
   final tasks = MemoryTaskStore();
@@ -139,18 +143,227 @@ void main() {
     },
   );
 
-  testWidgets('tomorrow\'s saved plan is shown', (t) async {
+  testWidgets(
+    'when tomorrow is planned the home says rest, and shows none of tomorrow\'s tasks',
+    (t) async {
+      final env = Env(
+        profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
+        plan: plan(2),
+      );
+      await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('tomorrow')), findsOneWidget);
+      expect(find.text('Tomorrow is planned. Rest now.'), findsOneWidget);
+      expect(find.text('Your tasks show up in the morning.'), findsOneWidget);
+      expect(
+        find.textContaining('Task 1'),
+        findsNothing,
+        reason: 'nothing to read before sleep',
+      );
+      expect(find.textContaining('2 tasks'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'in the morning a ready plan offers to start the day, and the card goes once the tasks are set up',
+    (t) async {
+      final env = Env(
+        profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
+        todayPlan: {...plan(1), 'date': '2026-10-27'},
+        hour: 8,
+      );
+      await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('today-ready')), findsOneWidget);
+      await env.tasks.upsert(
+        const LocalTask(
+          id: '1',
+          date: '2026-10-27',
+          title: 'Task 1',
+          minutes: 30,
+        ),
+      );
+      await t.pumpWidget(
+        MaterialApp(
+          home: HomePage(key: UniqueKey(), services: env.services),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('today-ready')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'the next task is shown on top, with its first step, and can be marked done',
+    (t) async {
+      final env = Env(
+        profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
+        hour: 9,
+      );
+      await env.tasks.upsert(
+        const LocalTask(
+          id: '1',
+          date: '2026-10-27',
+          title: 'Gym',
+          minutes: 60,
+          startTime: '17:00',
+        ),
+      );
+      await env.tasks.upsert(
+        const LocalTask(
+          id: '2',
+          date: '2026-10-27',
+          title: 'Study German',
+          minutes: 40,
+          startTime: '10:00',
+          firstStep: 'Open the sheet',
+        ),
+      );
+      await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
+      await t.pumpAndSettle();
+      expect(find.text('Next: Study German'), findsOneWidget);
+      expect(find.textContaining('First step: Open the sheet'), findsWidgets);
+      await t.tap(find.byKey(const Key('next-done')));
+      await t.pumpAndSettle();
+      expect(
+        find.text('Next: Gym'),
+        findsOneWidget,
+        reason: 'the next one moves up',
+      );
+    },
+  );
+
+  testWidgets(
+    '"Next task (test)" schedules a reminder for the next task in 10 seconds and says to leave the app',
+    (t) async {
+      t.view.physicalSize = const Size(900, 3200);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final env = Env(
+        profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
+        hour: 9,
+      );
+      await env.tasks.upsert(
+        const LocalTask(
+          id: '1',
+          date: '2026-10-27',
+          title: 'Study German',
+          minutes: 40,
+          startTime: '10:00',
+          firstStep: 'Open the sheet',
+        ),
+      );
+      await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.byKey(const Key('test-next')));
+      await t.tap(find.byKey(const Key('test-next')));
+      await t.pump(const Duration(milliseconds: 200));
+      await t.pump(const Duration(milliseconds: 200));
+      expect(env.native.alarms, hasLength(1));
+      final (id, at, message) = env.native.alarms.single;
+      expect(id, 'test-next');
+      expect(
+        message,
+        'Next task: Study German (40 min). First step: Open the sheet',
+      );
+      final seconds = (at - DateTime.now().millisecondsSinceEpoch) / 1000;
+      expect(seconds, inInclusiveRange(7, 11));
+      expect(
+        env.native.alarmCards.single,
+        isFalse,
+        reason: 'a notification, to test leaving the app',
+      );
+      expect(find.textContaining('Leave the app now'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    '"Next task (test)" without tasks still tests the reminder, and without the alarms permission says what to turn on',
+    (t) async {
+      t.view.physicalSize = const Size(900, 3200);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final env = Env(
+        profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
+      );
+      await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.byKey(const Key('test-next')));
+      await t.tap(find.byKey(const Key('test-next')));
+      await t.pump();
+      expect(env.native.alarms.single.$3, startsWith('Test reminder'));
+    },
+  );
+
+  testWidgets(
+    '"Next task (test)" without the alarms permission says what to turn on and schedules nothing',
+    (t) async {
+      t.view.physicalSize = const Size(900, 3200);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final off = Env(
+        profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
+      );
+      off.native.exactAlarms = false;
+      await t.pumpWidget(
+        MaterialApp(
+          home: HomePage(key: UniqueKey(), services: off.services),
+        ),
+      );
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.byKey(const Key('test-next')));
+      await t.tap(find.byKey(const Key('test-next')));
+      await t.pump();
+      expect(find.textContaining('Alarms and reminders'), findsOneWidget);
+      expect(off.native.alarms, isEmpty);
+    },
+  );
+
+  testWidgets('"Nudge card (test)" asks for the card on top of other apps', (
+    t,
+  ) async {
     final env = Env(
       profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
-      plan: plan(2),
     );
     await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
     await t.pumpAndSettle();
-    expect(find.text('Tomorrow is planned: 2 tasks'), findsOneWidget);
-    expect(find.text('Task 1 · Task 2'), findsOneWidget);
+    await t.ensureVisible(find.byKey(const Key('test-card')));
+    await t.tap(find.byKey(const Key('test-card')));
+    await t.pump(const Duration(milliseconds: 100));
+    await t.pump(const Duration(milliseconds: 100));
+    expect(env.native.alarmCards.single, isTrue);
+    expect(env.native.alarms.single.$1, 'test-card');
   });
 
+  test(
+    'the good-morning reminder is set for tomorrow at the wake-up time, 07:00 when none is set',
+    () async {
+      final env = Env();
+      expect(
+        await env.services.scheduleMorning(const Profile(wake: '06:30')),
+        isTrue,
+      );
+      expect(await env.services.scheduleMorning(const Profile()), isTrue);
+      final first = DateTime.fromMillisecondsSinceEpoch(
+        env.native.alarms[0].$2,
+      );
+      final second = DateTime.fromMillisecondsSinceEpoch(
+        env.native.alarms[1].$2,
+      );
+      expect(
+        [first.year, first.month, first.day, first.hour, first.minute],
+        [2026, 10, 28, 6, 30],
+      );
+      expect([second.hour, second.minute], [7, 0]);
+      expect(env.native.alarms[0].$1, 'morning-2026-10-28');
+      expect(env.native.alarms[0].$3, contains('tap to start your day'));
+    },
+  );
+
   testWidgets('without Usage access a banner offers to turn it on', (t) async {
+    t.view.physicalSize = const Size(900, 3200);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
     final env = Env(
       profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
     );

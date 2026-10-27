@@ -29,7 +29,7 @@ Send **summaries**, never the raw event log.
 - `mode`: `planning` (evening, plan `date`), `execute` (morning, apply the plan of `date` = today on the phone),
   `review` (evening, `today` is the day that ended, `date` is tomorrow; send `report`: `{"done":[...],"missed":[...]}`).
 - The server keeps the conversation. Send only the new message, or the results of device tools.
-- Answer, text: `{"type":"text","conversation_id":"...","text":"...","plan_saved":false}`.
+- Answer, text: `{"type":"text","conversation_id":"...","text":"...","spoken":"...","plan_saved":false}`. `text` is what is shown; `spoken` (optional) is one or two natural sentences the agent wrote to be read aloud (the phone reads it when the person talked; without it the phone makes its own short version).
 - Answer, device tools to run on the phone:
   `{"type":"tool_calls","conversation_id":"...","calls":[{"id":"call_1","name":"set_app_limit","args":{"app":"Instagram","minutes_per_day":30}}],"plan_saved":false,"artifacts":[]}`
   Run each, then send them ALL back (any order, exactly those ids):

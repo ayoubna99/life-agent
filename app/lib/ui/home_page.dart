@@ -4,7 +4,9 @@ import '../agent/models.dart';
 import '../app_services.dart';
 import '../chat/chat_controller.dart';
 import '../chat/chat_page.dart';
+import '../device/next_task.dart';
 import '../device/stores.dart';
+import '../platform/services.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -20,7 +22,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   AppServices get s => widget.services;
 
   List<LocalTask> _tasks = [];
-  SavedPlan? _tomorrow;
+  bool _tomorrowPlanned = false;
+  bool _todayReady = false;
   Profile _profile = const Profile();
   bool _profileLoaded = false;
   bool _usageOk = true;
@@ -48,24 +51,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _refresh() async {
     final tasks = await s.tasks.forDate(s.today);
     final usageOk = await s.native.hasUsageAccess().catchError((_) => false);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _tasks = tasks;
         _usageOk = usageOk;
       });
+    }
     try {
       final profile = await s.api.profile();
-      final plan = await s.api.plan(s.tomorrow);
-      if (mounted)
+      final tomorrow = await s.api.plan(s.tomorrow);
+      final today = await s.api.plan(s.today);
+      if (mounted) {
         setState(() {
           _profile = profile;
           _profileLoaded = true;
-          _tomorrow = plan;
+          _tomorrowPlanned = tomorrow != null;
+          _todayReady = today != null;
           _offline = null;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() => _offline = 'Offline: showing what is on this phone.');
+      }
     }
   }
 
@@ -104,11 +112,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _refresh();
   }
 
+  Future<void> _say(Future<String> Function() action) async {
+    final text = await action();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text), duration: const Duration(seconds: 6)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hour = s.now().hour;
     final evening = hour >= 17;
+    final next = nextTask(_tasks, s.now());
     return Scaffold(
       appBar: AppBar(
         title: const Text('Life'),
@@ -149,6 +166,43 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 action: 'Allow',
                 onTap: s.native.openUsageAccessSettings,
               ),
+            if (_todayReady && _tasks.isEmpty)
+              _Banner(
+                key: const Key('today-ready'),
+                icon: Icons.wb_sunny_outlined,
+                text: 'Good morning. Your plan for today is ready.',
+                action: 'Start my day',
+                onTap: () => _openChat(
+                  'Start my day',
+                  s.executeChat,
+                  first: 'Apply today\'s plan.',
+                ),
+              ),
+            if (next != null)
+              Card(
+                key: const Key('next'),
+                color: theme.colorScheme.primaryContainer,
+                child: ListTile(
+                  leading: const Icon(Icons.flag_outlined),
+                  title: Text('Next: ${next.title}'),
+                  subtitle: Text(
+                    [
+                      '${next.startTime != null ? '${next.startTime} · ' : ''}${next.minutes} min',
+                      if (next.firstStep != null)
+                        'First step: ${next.firstStep}',
+                    ].join('\n'),
+                  ),
+                  isThreeLine: next.firstStep != null,
+                  trailing: TextButton(
+                    key: const Key('next-done'),
+                    onPressed: () async {
+                      await s.tasks.setDone(next.id, true);
+                      _refresh();
+                    },
+                    child: const Text('Done'),
+                  ),
+                ),
+              ),
             Text('Today', style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
             if (_tasks.isEmpty)
@@ -173,17 +227,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   },
                 ),
             const SizedBox(height: 16),
-            if (_tomorrow != null)
+            // Tomorrow's tasks are not shown tonight: nothing to read before sleep. They appear in the morning.
+            if (_tomorrowPlanned)
               Card(
                 key: const Key('tomorrow'),
-                child: ListTile(
-                  leading: const Icon(Icons.event_available_outlined),
-                  title: Text(
-                    'Tomorrow is planned: ${_tomorrow!.tasks.length} task${_tomorrow!.tasks.length == 1 ? '' : 's'}',
-                  ),
-                  subtitle: Text(
-                    _tomorrow!.tasks.take(3).map((t) => t.title).join(' · '),
-                  ),
+                child: const ListTile(
+                  leading: Icon(Icons.bedtime_outlined),
+                  title: Text('Tomorrow is planned. Rest now.'),
+                  subtitle: Text('Your tasks show up in the morning.'),
                 ),
               ),
             const SizedBox(height: 8),
@@ -222,6 +273,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 first: 'Review my day.',
               ),
             ),
+            const SizedBox(height: 16),
+            Text('Test', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  key: const Key('test-next'),
+                  onPressed: () => _say(s.testNextTask),
+                  icon: const Icon(Icons.notifications_active_outlined),
+                  label: const Text('Next task (test)'),
+                ),
+                OutlinedButton.icon(
+                  key: const Key('test-card'),
+                  onPressed: () => _say(s.testNudgeCard),
+                  icon: const Icon(Icons.layers_outlined),
+                  label: const Text('Nudge card (test)'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -308,7 +380,7 @@ class _TaskTile extends StatelessWidget {
   });
 
   final LocalTask task;
-  final dynamic opener;
+  final LinkOpener opener;
   final ValueChanged<bool> onChanged;
 
   @override

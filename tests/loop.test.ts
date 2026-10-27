@@ -345,3 +345,18 @@ test('what the person reads: reasoning, markdown marks and our own file links ne
   assert.equal(r.text, 'All done.\n\n1. Big-O sheet:\n\nPlan\n- 10:00 Review (60 min)');
   assert.equal(store.messages.get(r.conversation_id)!.at(-1)!.content, r.text, 'the stored history is the clean text too');
 });
+
+test('the reply comes back as the text on screen and the line to say aloud, apart; the history keeps the full reply', async () => {
+  const { store, net, run } = setup([textReply('Your plan is ready.\nSPOKEN: Done, tomorrow starts at ten. Sleep well.')]);
+  const r = await run(base());
+  assert.equal(r.type, 'text');
+  if (r.type !== 'text') return;
+  assert.equal(r.text, 'Your plan is ready.');
+  assert.equal(r.spoken, 'Done, tomorrow starts at ten. Sleep well.');
+  assert.match(store.messages.get(r.conversation_id)!.at(-1)!.content!, /SPOKEN:/);
+  assert.match(net.museRequests[0].messages[0].content!, /Spoken version[\s\S]*SPOKEN:/, 'the agent is told to write it');
+
+  const plain = setup([textReply('Just text.')]);
+  const p = await plain.run(base());
+  assert.equal('spoken' in p, false);
+});

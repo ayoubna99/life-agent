@@ -8,7 +8,9 @@ import android.content.Intent
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val message = intent.getStringExtra("message") ?: return
-        Nudger(context).notify(message, intent.getIntExtra("id", 3000), Nudger.CHANNEL_REMINDER)
+        val id = intent.getIntExtra("id", 3000)
+        // card = the nudge card on top of the app in front (used by the test button); otherwise a normal reminder notification
+        if (intent.getBooleanExtra("card", false)) Nudger(context).show(message, id) else Nudger(context).notify(message, id, Nudger.CHANNEL_REMINDER)
     }
 }
 

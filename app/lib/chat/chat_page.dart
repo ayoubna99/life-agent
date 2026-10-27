@@ -211,15 +211,7 @@ class _ChatPageState extends State<ChatPage> {
                       onSubmitted: (_) => _send(),
                     ),
                   ),
-                  IconButton(
-                    key: const Key('mic'),
-                    tooltip: c.recording ? 'Stop and send' : 'Talk',
-                    onPressed: c.busy && !c.recording ? null : c.toggleVoice,
-                    icon: Icon(
-                      c.recording ? Icons.stop_circle : Icons.mic,
-                      color: c.recording ? theme.colorScheme.error : null,
-                    ),
-                  ),
+                  _HoldToTalk(controller: c),
                   IconButton.filled(
                     key: const Key('send'),
                     tooltip: 'Send',
@@ -231,6 +223,82 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Press and hold to talk, let go to send, slide away to cancel. It listens from the moment the finger touches down.
+class _HoldToTalk extends StatefulWidget {
+  const _HoldToTalk({required this.controller});
+
+  final ChatController controller;
+
+  @override
+  State<_HoldToTalk> createState() => _HoldToTalkState();
+}
+
+class _HoldToTalkState extends State<_HoldToTalk> {
+  static const _cancelDistance = 90.0;
+  Offset? _down;
+  bool _willCancel = false;
+
+  ChatController get c => widget.controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final disabled = c.busy && !c.recording;
+    final recording = c.recording;
+    return Listener(
+      key: const Key('mic'),
+      onPointerDown: disabled
+          ? null
+          : (e) {
+              _down = e.position;
+              _willCancel = false;
+              c.startListening();
+            },
+      onPointerMove: (e) {
+        final start = _down;
+        if (start == null) return;
+        final away = (e.position - start).distance > _cancelDistance;
+        if (away != _willCancel) setState(() => _willCancel = away);
+      },
+      onPointerUp: (_) {
+        _down = null;
+        c.stopListening(cancel: _willCancel);
+        setState(() => _willCancel = false);
+      },
+      onPointerCancel: (_) {
+        _down = null;
+        c.stopListening(cancel: true);
+        setState(() => _willCancel = false);
+      },
+      child: Tooltip(
+        message: 'Hold to talk',
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: recording ? 64 : 48,
+          height: recording ? 64 : 48,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: disabled
+                ? theme.colorScheme.surfaceContainerHighest
+                : recording
+                ? (_willCancel
+                      ? theme.colorScheme.outline
+                      : theme.colorScheme.error)
+                : theme.colorScheme.secondaryContainer,
+          ),
+          child: Icon(
+            _willCancel ? Icons.close : Icons.mic,
+            color: recording
+                ? theme.colorScheme.onError
+                : theme.colorScheme.onSecondaryContainer,
+          ),
+        ),
       ),
     );
   }

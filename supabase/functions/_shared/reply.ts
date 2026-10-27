@@ -35,3 +35,21 @@ export function cleanReply(text: string): string {
   if (out === '') out = plain;
   return out;
 }
+
+/**
+ * Splits the "SPOKEN: ..." last line off a reply. The rest is what is shown on screen; the line is what is said aloud.
+ * Without such a line the whole reply is shown and nothing special is said (the phone makes its own short version).
+ */
+export function splitSpoken(text: string): { text: string; spoken?: string } {
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim() === '') continue;
+    const m = lines[i].match(/^[\s*_>#-]*spoken[\s*_]*:[\s*_]*(.*)$/i);
+    if (!m) break;
+    const spoken = m[1].replace(/[*_`]+/g, '').replace(/\s+/g, ' ').trim();
+    const shown = lines.slice(0, i).join('\n').trim();
+    if (shown === '') break; // a reply that is only a spoken line: show it as it is
+    return spoken === '' ? { text: shown } : { text: shown, spoken: spoken.slice(0, 400) };
+  }
+  return { text };
+}

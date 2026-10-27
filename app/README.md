@@ -30,14 +30,17 @@ The APK is `build/app/outputs/flutter-apk/app-release.apk`. A build without the 
 
 1. Open **Settings** in the app: wake and sleep time, the apps that pull you away, what you work towards. They are saved on the server, so the agent never asks for them.
 2. Allow **Usage access** (real screen time), **Notifications**, **Alarms and reminders**, and optionally **Show over other apps** (the nudge card; without it a notification is used).
-3. **Plan tomorrow** in the evening. In the morning press **Start my day**: the agent creates the tasks, sets the limits and schedules reminders on this phone.
+3. **Plan tomorrow** in the evening. When you confirm, the agent saves it and Life only says "Tomorrow is planned. Rest now.": tomorrow's tasks are not shown before sleep. A good-morning reminder is set for your wake-up time, and in the morning **Start my day** sets everything up.
+3b. **Talk:** press and hold the microphone, let go to send, slide away to cancel. The agent writes a short spoken line for each reply and the phone reads it in the voice you chose in Settings.
+3c. **Test buttons** (bottom of the home screen): *Next task (test)* schedules a reminder for your next task in 10 seconds, so you can leave the app and check that alarms and notifications work. *Nudge card (test)* shows the card that appears on top of other apps.
+
 4. A small notification says Life is watching your limits. When a limited app is open and the limit is near, reached or passed, the agent writes a short message and shows it on top of the app.
 5. **Review my day** in the evening compares the plan with what really happened and adapts tomorrow.
 
 ## Tests
 
 ```
-flutter test                      # 83 tests: client, chat loop, device tools, chat, voice, files, home, settings
+flutter test                      # 101 tests: client, chat loop, device tools, chat, voice, files, home, settings
 cd android && ./gradlew testDebugUnitTest   # 29 Kotlin tests: usage maths, nudge rules, app-name matching
 ```
 

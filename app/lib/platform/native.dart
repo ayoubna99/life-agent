@@ -21,6 +21,7 @@ abstract class Native {
     required String id,
     required int atMillis,
     required String message,
+    bool card = false,
   });
 
   Future<void> cancelAlarm(String id);
@@ -87,10 +88,12 @@ class MethodChannelNative implements Native {
     required String id,
     required int atMillis,
     required String message,
+    bool card = false,
   }) => _call<bool>('scheduleAlarm', {
     'id': id,
     'at': atMillis,
     'message': message,
+    'card': card,
   });
 
   @override
@@ -138,12 +141,14 @@ class NativeAlarmScheduler implements AlarmScheduler {
     required String id,
     required DateTime at,
     required String message,
+    bool card = false,
   }) async {
     try {
       return await native.scheduleAlarm(
         id: id,
         atMillis: at.millisecondsSinceEpoch,
         message: message,
+        card: card,
       );
     } on PlatformException {
       return false;

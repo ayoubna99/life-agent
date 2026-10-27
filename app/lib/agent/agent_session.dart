@@ -8,12 +8,14 @@ import 'models.dart';
 class AgentReply {
   const AgentReply({
     required this.text,
+    this.spoken,
     required this.planSaved,
     required this.artifacts,
     required this.toolsRun,
   });
 
   final String text;
+  final String? spoken;
   final bool planSaved;
   final List<Artifact> artifacts;
   final List<ToolRun> toolsRun;
@@ -92,6 +94,7 @@ class AgentSession {
         if (mode == 'execute') await tools.endRun();
         return AgentReply(
           text: answer.text ?? '',
+          spoken: answer.spoken,
           planSaved: planSaved,
           artifacts: artifacts,
           toolsRun: run,

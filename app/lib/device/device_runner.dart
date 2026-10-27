@@ -9,6 +9,9 @@ abstract class AlarmScheduler {
     required String id,
     required DateTime at,
     required String message,
+
+    /// Show it as a card on top of the app in front (when allowed), not only as a notification.
+    bool card = false,
   });
 
   /// Cancels a reminder made earlier (it may already have fired: that is fine).

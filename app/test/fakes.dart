@@ -70,6 +70,7 @@ class FakeNative implements Native {
   List<String> notFound = [];
   Map<String, int>? limits;
   final List<(String, int, String)> alarms = [];
+  final List<bool> alarmCards = [];
   int usageSettingsOpened = 0;
   ({String baseUrl, String apiKey, String locale})? nudgeConfig;
 
@@ -96,9 +97,11 @@ class FakeNative implements Native {
     required String id,
     required int atMillis,
     required String message,
+    bool card = false,
   }) async {
     if (!exactAlarms) return false;
     alarms.add((id, atMillis, message));
+    alarmCards.add(card);
     return true;
   }
 

@@ -85,10 +85,10 @@ npm test
 
 ## Status
 
-- **Backend, unit tested (140 tests):** the agent loop, the three modes, server and device tools, plan validation, link checks,
+- **Backend, unit tested (143 tests):** the agent loop, the three modes, server and device tools, plan validation, link checks,
   storage, token handling, per-user and global caps, PDF in and out, photos in and out, voice, cleanup. The migrations were applied
   to a local Postgres 16 and their security rules checked. Functions ran in the real Deno runtime for the PDF writer and reader.
-- **App, unit and widget tested (83 Dart tests, 29 Kotlin tests):** sign-in, the API client, the chat loop with device tools, chat, voice,
+- **App, unit and widget tested (101 Dart tests, 29 Kotlin tests):** sign-in, the API client, the chat loop with device tools, chat, voice,
   files and photos, home, settings, the usage maths, nudge rules and app-name matching.
 - **Not yet run on a phone or against Meta's live API:** real Muse Spark tool calls, `/responses` (web search, photos, scanned PDFs),
   `/images/generations`, Voice Transcribe, and everything Android-specific (usage stats, alarms, the watcher service and the overlay).

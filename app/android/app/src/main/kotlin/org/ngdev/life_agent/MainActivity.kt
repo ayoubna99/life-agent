@@ -46,7 +46,7 @@ class MainActivity : FlutterActivity() {
                 }
                 result.success(null)
             }
-            "scheduleAlarm" -> result.success(scheduleAlarm(call.argument<String>("id")!!, call.argument<Number>("at")!!.toLong(), call.argument<String>("message")!!))
+            "scheduleAlarm" -> result.success(scheduleAlarm(call.argument<String>("id")!!, call.argument<Number>("at")!!.toLong(), call.argument<String>("message")!!, call.argument<Boolean>("card") ?: false))
             "cancelAlarm" -> {
                 cancelAlarm(call.argument<String>("id")!!)
                 result.success(null)
@@ -95,10 +95,10 @@ class MainActivity : FlutterActivity() {
         return (getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
     }
 
-    private fun scheduleAlarm(id: String, atMs: Long, message: String): Boolean {
+    private fun scheduleAlarm(id: String, atMs: Long, message: String, card: Boolean): Boolean {
         if (!canExact()) return false
         val code = id.hashCode()
-        val intent = Intent(this, AlarmReceiver::class.java).putExtra("message", message).putExtra("id", 3000 + (code and 0xFFF))
+        val intent = Intent(this, AlarmReceiver::class.java).putExtra("message", message).putExtra("card", card).putExtra("id", 3000 + (code and 0xFFF))
         val pending = PendingIntent.getBroadcast(this, code, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         (getSystemService(Context.ALARM_SERVICE) as AlarmManager).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pending)
         return true

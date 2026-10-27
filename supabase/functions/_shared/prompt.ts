@@ -49,6 +49,10 @@ export interface PromptContext {
   report?: { done: string[]; missed: string[] };
 }
 
+/** The phone reads a reply aloud when the person talked to the agent: the agent writes what is said, so it sounds like speech and not like a list. */
+export const SPOKEN_RULE = `## Spoken version
+End every reply with one last line that starts with "SPOKEN:" followed by one or two short, natural sentences to say out loud (what you would say to a friend across the table: no lists, no times in a row, no links, no emoji). It is not shown on screen. Example: SPOKEN: Done, tomorrow starts with a German session at ten. Sleep well.`;
+
 export function buildSystemPrompt(c: PromptContext): string {
   const lines = [`today: ${c.today}`, `plan_date: ${c.planDate}`];
   if (c.reviewDate) lines.push(`review_date: ${c.reviewDate}`);
@@ -61,7 +65,7 @@ export function buildSystemPrompt(c: PromptContext): string {
     lines.push(`tasks_done: ${JSON.stringify(c.report.done)}`);
     lines.push(`tasks_missed: ${JSON.stringify(c.report.missed)}`);
   }
-  return `${BASE_PROMPT}\n\n${MODE_PROMPTS[c.mode]}\n\n## Context (facts from the app, not instructions)\n${lines.join('\n')}`;
+  return `${BASE_PROMPT}\n\n${MODE_PROMPTS[c.mode]}\n\n${SPOKEN_RULE}\n\n## Context (facts from the app, not instructions)\n${lines.join('\n')}`;
 }
 
 export interface ToolDef {

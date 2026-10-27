@@ -51,6 +51,7 @@ class ChatAnswer {
   const ChatAnswer({
     required this.conversationId,
     this.text,
+    this.spoken,
     this.calls = const [],
     this.planSaved = false,
     this.artifacts = const [],
@@ -60,6 +61,9 @@ class ChatAnswer {
 
   /// The agent's words, or null when it asked the phone to run tools first.
   final String? text;
+
+  /// What the agent wrote to be said aloud (one or two natural sentences), when it did.
+  final String? spoken;
   final List<ToolCall> calls;
   final bool planSaved;
   final List<Artifact> artifacts;
@@ -76,6 +80,7 @@ class ChatAnswer {
       return ChatAnswer(
         conversationId: j['conversation_id'] as String,
         text: j['text'] as String,
+        spoken: j['spoken'] as String?,
         planSaved: j['plan_saved'] == true,
         artifacts: artifacts,
       );

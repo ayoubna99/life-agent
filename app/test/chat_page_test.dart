@@ -208,13 +208,18 @@ void main() {
   });
 
   testWidgets(
-    'the microphone button listens, and the field is locked while it does',
+    'hold the microphone to talk: it listens while the finger is down and the field is locked',
     (t) async {
       final (c, _, _) = await open(t, [text('ok')]);
-      await t.tap(find.byKey(const Key('mic')));
+      final hold = await t.startGesture(
+        t.getCenter(find.byKey(const Key('mic'))),
+      );
       await t.pump();
       expect(c.recording, isTrue);
-      expect(find.text('Listening… tap again to send'), findsOneWidget);
+      expect(
+        find.text('Listening… let go to send, slide away to cancel'),
+        findsOneWidget,
+      );
       expect(
         t.widget<TextField>(find.byKey(const Key('input'))).enabled,
         isFalse,
@@ -223,7 +228,46 @@ void main() {
         t.widget<IconButton>(find.byKey(const Key('send'))).onPressed,
         isNull,
       );
-      c.dispose(); // stops the recording timer
+      await hold.up();
+      await t.pump(const Duration(milliseconds: 10));
+      expect(c.recording, isFalse, reason: 'letting go stops it');
+      c.dispose();
     },
   );
+
+  testWidgets('sliding the finger away while holding cancels the recording', (
+    t,
+  ) async {
+    final (c, _, server) = await open(t, [text('ok')]);
+    final hold = await t.startGesture(
+      t.getCenter(find.byKey(const Key('mic'))),
+    );
+    await t.pump();
+    await hold.moveBy(const Offset(-160, 0));
+    await t.pump();
+    expect(
+      find.byIcon(Icons.close),
+      findsOneWidget,
+      reason: 'the button shows it will cancel',
+    );
+    await hold.up();
+    await t.pumpAndSettle();
+    expect(c.recording, isFalse);
+    expect(c.messages, isEmpty);
+    expect(
+      server.agentCalls.where((q) => q.json['action'] == 'transcribe'),
+      isEmpty,
+    );
+    c.dispose();
+  });
+
+  testWidgets('a quick tap on the microphone only explains how it works', (
+    t,
+  ) async {
+    final (c, _, _) = await open(t, [text('ok')]);
+    await t.tap(find.byKey(const Key('mic')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Hold the button'), findsOneWidget);
+    expect(c.recording, isFalse);
+  });
 }

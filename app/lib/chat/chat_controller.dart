@@ -24,7 +24,10 @@ class ChatController extends ChangeNotifier {
     this.keywords = const [],
     this.languages = const ['English'],
     this.maxRecording = const Duration(seconds: 120),
-  });
+    this.minHold = const Duration(milliseconds: 450),
+    this.onPlanSaved,
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
 
   final AgentSession session;
   final AgentApi api;
@@ -37,6 +40,14 @@ class ChatController extends ChangeNotifier {
   final List<String> languages;
   final Duration maxRecording;
 
+  /// A touch shorter than this is a tap, not talking.
+  final Duration minHold;
+
+  /// Called when the agent saved a plan (the app uses it to schedule the good-morning reminder).
+  final Future<void> Function()? onPlanSaved;
+  final DateTime Function() _now;
+  DateTime _heldSince = DateTime.fromMillisecondsSinceEpoch(0);
+
   final List<ChatMessage> messages = [];
   final List<AttachResult> attachments = [];
   bool busy = false;
@@ -45,6 +56,7 @@ class ChatController extends ChangeNotifier {
   String? status;
   bool _usageSynced = false;
   bool _spokenInput = false;
+  bool _wantListening = false;
   Timer? _limit;
 
   void _set({bool? busy, String? status, bool clearStatus = false}) {
@@ -78,7 +90,14 @@ class ChatController extends ChangeNotifier {
       final shown = plainText(reply.text);
       messages.add(ChatMessage(Who.agent, shown, artifacts: reply.artifacts));
       planSaved = planSaved || reply.planSaved;
-      if (_spokenInput) await _speakShort(shown);
+      if (reply.planSaved) {
+        try {
+          await onPlanSaved?.call();
+        } catch (_) {
+          // the reminder is a bonus; the plan is saved either way
+        }
+      }
+      if (_spokenInput) await _speakShort(shown, reply.spoken);
     } catch (e) {
       _note(describeError(e), error: true);
     } finally {
@@ -88,10 +107,12 @@ class ChatController extends ChangeNotifier {
   }
 
   /// Read aloud only after the person talked, in their chosen voice, and only a short clean version (never the links or the whole plan).
-  Future<void> _speakShort(String text) async {
+  Future<void> _speakShort(String text, String? spoken) async {
     final voice = await voiceSettings?.load();
     if (voice != null && !voice.enabled) return;
-    final short = speakable(text);
+    final short = speakable(
+      spoken != null && spoken.trim().isNotEmpty ? spoken : text,
+    );
     if (short.isNotEmpty) unawaited(speaker.speak(short));
   }
 
@@ -142,36 +163,59 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Tap once to start talking, tap again to send. The words are typed into the chat for the agent.
-  Future<void> toggleVoice() async {
-    if (busy && !recording) return;
-    if (!recording) {
-      if (!await voice.hasPermission()) {
-        _note(
-          'I need the microphone to listen. Allow it in your phone settings.',
-          error: true,
-        );
-        notifyListeners();
-        return;
-      }
-      try {
-        await voice.start();
-      } catch (_) {
-        _note('The microphone could not start.', error: true);
-        notifyListeners();
-        return;
-      }
-      recording = true;
-      _limit = Timer(maxRecording, () => unawaited(toggleVoice()));
-      _set(status: 'Listening… tap again to send');
+  /// Press and hold the microphone button: it listens while the finger is down.
+  Future<void> startListening() async {
+    if (busy || recording) return;
+    _wantListening = true;
+    if (!await voice.hasPermission()) {
+      _note(
+        'I need the microphone to listen. Allow it in your phone settings.',
+        error: true,
+      );
+      notifyListeners();
       return;
     }
+    try {
+      await voice.start();
+    } catch (_) {
+      _note('The microphone could not start.', error: true);
+      notifyListeners();
+      return;
+    }
+    recording = true;
+    _heldSince = _now();
+    _limit = Timer(maxRecording, () => unawaited(stopListening()));
+    _set(status: 'Listening… let go to send, slide away to cancel');
+    // The finger may already be up (a very quick tap): then there is nothing to listen to.
+    if (!_wantListening) await stopListening();
+  }
+
+  /// Let go: what was said is turned into text and sent. A very short touch is just a tap (nothing is sent), and
+  /// [cancel] (the finger slid away) throws the recording away.
+  Future<void> stopListening({bool cancel = false}) async {
+    _wantListening = false;
+    if (!recording) return;
     _limit?.cancel();
     recording = false;
+    final held = _now().difference(_heldSince);
+    Uint8List? wav;
+    try {
+      wav = await voice.stop();
+    } catch (_) {
+      wav = null;
+    }
+    if (cancel) {
+      _set(clearStatus: true);
+      return;
+    }
+    if (held < minHold) {
+      _note('Hold the button while you talk, then let go to send.');
+      _set(clearStatus: true);
+      return;
+    }
     _set(busy: true, status: 'Listening…');
     String? said;
     try {
-      final wav = await voice.stop();
       if (wav == null || wav.isEmpty) throw AgentException('no_speech');
       said = await api.transcribe(
         wav: wav,
