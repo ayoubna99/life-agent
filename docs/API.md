@@ -51,7 +51,7 @@ Send **summaries**, never the raw event log.
 | `get_plan(date)` | server | execute, review | reads the saved plan |
 | `save_plan(wake?, sleep?, tasks[], limits[], note?)` | server | planning, review | validates and stores the plan for `date`; drops dead links |
 | `create_material(title, markdown, format?)` | server | planning, review | writes a study or work sheet as a **PDF** (default, A4, drawn from the markdown: headings, bullets, numbered lists, simple tables) or as `markdown`; stores it in `materials/<user id>/` and returns a link valid for a week. The PDF fonts are Latin only; other scripts show as `?` and the agent is told to use `markdown` instead. Appears in the chat answer's `artifacts` as `pdf` or `markdown` |
-| `create_image(title, prompt, shape?)` | server | planning, review | makes one picture with Muse Image (`square`, `portrait` or `landscape`), stores it in `materials/<user id>/images/` and returns a link valid for a week. Max 2 per request. It also appears in the chat answer's `artifacts` |
+| `create_image(title, prompt, shape?)` | server | planning, review | makes one picture with Muse Image (`square`, `portrait` or `landscape`), stores it in `materials/<user id>/images/` and returns a link valid for a week. Max 1 per request. It also appears in the chat answer's `artifacts` |
 | `fetch_url(url, offset?)` | server | planning, review | reads a public web page or PDF (12 000 characters at a time) |
 | `web_search(query)` | server | planning, review | Muse's built-in `web_search` (Responses API, `/responses`): returns `{answer, sources[{title,url}], searched}`. Optional `SEARCH_MODEL` secret |
 | `read_document(document_id, offset?)` | server | planning, review | reads a document the user attached |
@@ -71,7 +71,7 @@ The agent receives these as known facts and never asks for them.
 1. The phone uploads the file to Storage: `POST {SUPABASE_URL}/storage/v1/object/uploads/<user id>/<file name>`
    with the user's token (max 10 MB). **Photos:** PNG, JPEG or WebP, **at most 5 MB** (the type is read from the bytes).
 2. `{"action":"attach","path":"<user id>/<file name>","name":"Lecture 3.pdf"}` ->
-   `{"document_id":"...","name":"...","kind":"pdf","pages":12,"chars":41000,"truncated":false,"file_path":"<user id>/<file name>"}`.
+   `{"document_id":"...","name":"...","kind":"pdf","pages":12,"chars":41000,"truncated":false,"file_path":null}`.
    `kind` is `pdf`, `text` or `image`; `read_by` is `text` (read on the server, free) or `vision`. A photo is read once by Muse Spark
    (it transcribes the text and describes the layout). A PDF with no text layer (a scan, slides that are pictures) is also
    sent to Muse Spark, which reads the pages as images (Meta converts the first 50 pages). Both count as one request against the daily caps.
@@ -79,8 +79,11 @@ The agent receives these as known facts and never asks for them.
    `image_too_large`, `image_unreadable`, `daily_limit_reached`, `demo_at_capacity`.
 3. Send `document_id` in `attachments` of the next chat message. The agent sees a photo as text (with a warning that it
    may be misread) and opens it with `read_document`.
-4. **Where files are kept:** the original stays in the private Storage bucket `uploads`, in the user's own folder
-   (`uploads/<user id>/...`); the text is in the `documents` table (`kind`, `file_path`). Only the owner can read either.
+4. **Storage:** the original is **deleted after it has been read** (`file_path: null`), because photos and PDFs can be several MB and the
+   agent only needs the text, which is kept in the `documents` table. Set the secret `KEEP_ORIGINALS=true` to keep the original in the
+   private bucket `uploads/<user id>/...` instead (then `file_path` says where). Pictures the agent makes are about 100 to 300 KB and PDF
+   sheets about 2 KB; both go to `materials/<user id>/`.
+   The phone should shrink photos before uploading (about 1600 px on the long side, JPEG quality 80, which is a few hundred KB).
 
 ## action: "transcribe"  (the user talks instead of typing)
 1. The phone records, wraps the audio in a WAV header (**mono, 16-bit, 16 or 24 kHz**, under 10 minutes; the 10 MB

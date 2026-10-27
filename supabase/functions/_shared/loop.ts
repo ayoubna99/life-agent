@@ -24,7 +24,7 @@ export const LIMITS = {
   maxReportItems: 20,
   maxReportChars: 120,
   maxAttachments: 3,
-  maxImagesPerRequest: 2,
+  maxImagesPerRequest: 1,
 };
 
 export class BadRequest extends Error {

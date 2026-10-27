@@ -61,8 +61,8 @@ export interface NewDocument {
   text: string;
   pages: number;
   kind: 'pdf' | 'text' | 'image';
-  /** Where the original file stays, in the private "uploads" bucket. */
-  filePath: string;
+  /** Where the original file stays in the private "uploads" bucket, or null when it was deleted after reading. */
+  filePath: string | null;
 }
 
 export interface StoredDocument {

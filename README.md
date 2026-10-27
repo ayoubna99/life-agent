@@ -34,7 +34,7 @@ Android app (Kotlin) ──> Supabase Edge Function "agent" ──> Muse Spark
 - **Mid-session nudge:** `nudge` returns one short, personal message about the user's next task while they are on an app.
 - **Voice:** `transcribe` turns a short recording into text with Muse Voice Transcribe, and the text goes into the chat.
 - **Study sheets as real PDFs:** `create_material` writes an A4 PDF (headings, lists, tables) and stores it in the user's private folder; the link goes into the plan task.
-- **Photos in and out:** a photo the user sends (timetable, whiteboard, notes) is read by Muse Spark and kept as text next to the original file; `create_image` makes a picture (e.g. a shareable card of the day) with Muse Image and stores it in the user's private folder.
+- **Photos in and out:** a photo the user sends (timetable, whiteboard, notes) is read by Muse Spark and kept as text (the original is deleted after reading, to save storage); `create_image` makes a picture (e.g. a shareable card of the day) with Muse Image and stores it in the user's private folder.
 - **Reads the web and documents:** `fetch_url`, `web_search` (Muse's own built-in search, with cited sources) and PDFs or text files the user sends.
 - The Muse Spark key lives only in Supabase secrets. A daily per-user cap protects the credits.
 - Links the model suggests are checked before they are saved; dead or unsafe ones are dropped.

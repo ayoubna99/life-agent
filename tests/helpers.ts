@@ -81,7 +81,7 @@ export class MemoryStore implements Store {
     return b && b.length <= maxBytes ? b : null;
   }
   deleted: string[] = [];
-  docFiles = new Map<string, string>();
+  docFiles = new Map<string, string | null>();
   files = new Map<string, { bytes: Uint8Array; contentType: string }>();
   async saveFile(fileName: string, bytes: Uint8Array, contentType: string) {
     this.files.set(fileName, { bytes, contentType });

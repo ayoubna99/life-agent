@@ -164,14 +164,21 @@ test('transcribe counts against the daily limit and passes a failing Meta call o
   assert.equal((await r.json()).error.code, 'agent_upstream_status');
 });
 
-test('attach keeps the original file, next to its saved text', async () => {
+test('attach deletes the original once its text is saved, unless KEEP_ORIGINALS=true', async () => {
   const store = new MemoryStore();
   store.uploads.set(`${USER}/notes.txt`, new TextEncoder().encode('remember the pivot'));
   const r = await http({ action: 'attach', path: `${USER}/notes.txt` }, store, () => ok('')).res;
   assert.equal(r.status, 200);
-  assert.deepEqual(store.deleted, []);
-  assert.ok(store.uploads.has(`${USER}/notes.txt`), 'the original stays in uploads');
+  assert.equal((await r.json()).file_path, null);
+  assert.deepEqual(store.deleted, [`${USER}/notes.txt`]);
   assert.equal(store.documents.size, 1);
-  assert.deepEqual([...store.docFiles.values()], [`${USER}/notes.txt`]);
-  assert.equal([...store.documents.values()][0].kind, 'text');
+  assert.deepEqual([...store.docFiles.values()], [null]);
+
+  const keep = new MemoryStore();
+  keep.uploads.set(`${USER}/notes.txt`, new TextEncoder().encode('remember the pivot'));
+  const k = await http({ action: 'attach', path: `${USER}/notes.txt` }, keep, () => ok(''), { ...ENV, KEEP_ORIGINALS: 'true' }).res;
+  assert.equal((await k.json()).file_path, `${USER}/notes.txt`);
+  assert.deepEqual(keep.deleted, []);
+  assert.ok(keep.uploads.has(`${USER}/notes.txt`), 'kept on request');
+  assert.equal(keep.documents.size, 1);
 });

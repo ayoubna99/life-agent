@@ -71,31 +71,31 @@ function http(body: unknown, store: MemoryStore, answer: (url: string) => Respon
   return { res: handle(req, { get: (n) => ENV[n], fetchImpl, storeFor: () => store, loadPdf: realPdfLoader }), calls };
 }
 
-test('attach: a photo is read by Muse Spark, its text saved as a document, and the original photo stays in uploads', async () => {
+test('attach: a photo is read by Muse Spark, its text saved as a document, and the original photo is deleted', async () => {
   const store = new MemoryStore();
   store.uploads.set(`${USER}/1-timetable.jpg`, JPEG);
   const { res, calls } = http({ action: 'attach', path: `${USER}/1-timetable.jpg`, name: 'Timetable' }, store, () => jsonRes(visionReply('Mon 9:00 Algorithms')));
   const r = await res;
   assert.equal(r.status, 200);
   const out = await r.json();
-  assert.deepEqual({ name: out.name, kind: out.kind, file_path: out.file_path }, { name: 'Timetable', kind: 'image', file_path: `${USER}/1-timetable.jpg` });
+  assert.deepEqual({ name: out.name, kind: out.kind, file_path: out.file_path }, { name: 'Timetable', kind: 'image', file_path: null });
   assert.equal(calls.length, 1);
   const doc = store.documents.get(out.document_id)!;
   assert.deepEqual({ kind: doc.kind, text: doc.text }, { kind: 'image', text: 'Mon 9:00 Algorithms' });
-  assert.equal(store.docFiles.get(out.document_id), `${USER}/1-timetable.jpg`);
-  assert.ok(store.uploads.has(`${USER}/1-timetable.jpg`), 'the photo is kept');
-  assert.deepEqual(store.deleted, []);
+  assert.equal(store.docFiles.get(out.document_id), null);
+  assert.deepEqual(store.deleted, [`${USER}/1-timetable.jpg`]);
+  assert.equal(store.uploads.has(`${USER}/1-timetable.jpg`), false, 'the photo does not stay in storage');
   assert.equal(store.quota, 1, 'reading a photo is a model call, so it is counted');
   assert.equal(store.globalQuota, 1);
 });
 
-test('attach: PDFs are kept too, and labelled pdf', async () => {
+test('attach: PDFs are labelled pdf and their original is deleted too', async () => {
   const { makePdf } = await import('./helpers.ts');
   const store = new MemoryStore();
   store.uploads.set(`${USER}/l.pdf`, makePdf(['Quick sort']));
   const out = await (await http({ action: 'attach', path: `${USER}/l.pdf` }, store, () => jsonRes({})).res).json();
   assert.equal(out.kind, 'pdf');
-  assert.ok(store.uploads.has(`${USER}/l.pdf`));
+  assert.equal(store.uploads.has(`${USER}/l.pdf`), false);
   assert.equal(store.quota, 0, 'a PDF is read locally: no model call, no quota');
 });
 
@@ -186,7 +186,7 @@ test('create_image: bad input, no setup, no budget and a refused picture come ba
   assert.equal(blocked.store.files.size, 0);
 });
 
-test('chat: the picture reaches the phone as an artifact, at most two per request, and none by default', async () => {
+test('chat: the picture reaches the phone as an artifact, at most one per request, and none by default', async () => {
   const store = new MemoryStore();
   const net = fakeNet([
     callsReply(['create_image', { title: 'One', prompt: 'a' }, 'c1'], ['create_image', { title: 'Two', prompt: 'b' }, 'c2'], ['create_image', { title: 'Three', prompt: 'c' }, 'c3']),
@@ -199,9 +199,10 @@ test('chat: the picture reaches the phone as an artifact, at most two per reques
     { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit: 80, globalLimit: 1000, fetchImpl, randomId: () => `id${++n}abcdefgh` },
   );
   assert.equal(r.type, 'text');
-  assert.deepEqual(r.artifacts.map((a) => a.title), ['One', 'Two']);
-  assert.equal(store.files.size, 2);
+  assert.deepEqual(r.artifacts.map((a) => a.title), ['One']);
+  assert.equal(store.files.size, 1);
   const toolAnswers = net.museRequests[1].messages.filter((m) => m.role === 'tool').map((m) => JSON.parse(m.content!));
+  assert.match(toolAnswers[1].error, /No more pictures/);
   assert.match(toolAnswers[2].error, /No more pictures/);
 
   const plain = fakeNet([textReply('hi')]);
@@ -259,7 +260,7 @@ test('attach: a scanned PDF (no text) is read by Muse Spark instead of being ref
   assert.equal(calls.length, 1);
   assert.match(store.documents.get(out.document_id)!.text, /Merge sort splits/);
   assert.equal(store.quota, 1);
-  assert.ok(store.uploads.has(`${USER}/scan.pdf`), 'the original is kept');
+  assert.equal(store.uploads.has(`${USER}/scan.pdf`), false, 'the original is deleted');
 });
 
 test('attach: a PDF with a text layer never goes to the model, and a scan the model cannot read is still refused with a reason', async () => {

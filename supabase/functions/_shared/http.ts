@@ -171,9 +171,12 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
         if (text.trim() === '') throw new BadRequest('no_text_in_document');
         const truncated = text.length > MAX_DOC_CHARS;
         if (truncated) text = text.slice(0, MAX_DOC_CHARS);
-        const id = await store.saveDocument({ name, text, pages, kind, filePath: path });
-        // The original file is kept in "uploads/<your id>/", private to the user, next to its text.
-        return json({ document_id: id, name, kind, read_by: readBy, pages, chars: text.length, truncated, file_path: path });
+        // Originals (photos can be several MB) are deleted once read: the text is what the agent uses. KEEP_ORIGINALS=true keeps them
+        // in "uploads/<your id>/", private to the user.
+        const keep = env.get('KEEP_ORIGINALS')?.trim().toLowerCase() === 'true';
+        const id = await store.saveDocument({ name, text, pages, kind, filePath: keep ? path : null });
+        if (!keep) await store.deleteUpload(path);
+        return json({ document_id: id, name, kind, read_by: readBy, pages, chars: text.length, truncated, file_path: keep ? path : null });
       }
       case 'transcribe': {
         // The phone uploaded a short WAV recording to Storage; we send it to Muse Voice Transcribe and return the text.
