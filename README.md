@@ -33,6 +33,8 @@ Android app (Kotlin) ──> Supabase Edge Function "agent" ──> Muse Spark
   handed to the agent as known facts, so the chat never asks for them. The agent estimates task durations itself.
 - **Mid-session nudge:** `nudge` returns one short, personal message about the user's next task while they are on an app.
 - **Voice:** `transcribe` turns a short recording into text with Muse Voice Transcribe, and the text goes into the chat.
+- **Study sheets as real PDFs:** `create_material` writes an A4 PDF (headings, lists, tables) and stores it in the user's private folder; the link goes into the plan task.
+- **Photos in and out:** a photo the user sends (timetable, whiteboard, notes) is read by Muse Spark and kept as text next to the original file; `create_image` makes a picture (e.g. a shareable card of the day) with Muse Image and stores it in the user's private folder.
 - **Reads the web and documents:** `fetch_url`, `web_search` (Muse's own built-in search, with cited sources) and PDFs or text files the user sends.
 - The Muse Spark key lives only in Supabase secrets. A daily per-user cap protects the credits.
 - Links the model suggests are checked before they are saved; dead or unsafe ones are dropped.
@@ -83,7 +85,7 @@ npm test
 
 ## Status
 
-- Done and unit tested (99 tests, including a real PDF read with the real PDF library): the agent loop, the three modes, server and device tools, plan validation, link checks,
+- Done and unit tested (126 tests, including a real PDF read with the real PDF library): the agent loop, the three modes, server and device tools, plan validation, link checks,
   the storage layer's requests, token handling, per-user cap. Both migrations were applied to a local Postgres 16 and
   their security rules checked.
 - Not yet run against the real services: the deployed function with real Muse Spark tool calls (use `scripts/smoke.ps1`).

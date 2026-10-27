@@ -43,6 +43,8 @@ export interface Store {
   upsertUsage(rows: UsageRow[]): Promise<void>;
   /** Stores a markdown file for this user and returns a link that works for a week. */
   saveMaterial(fileName: string, markdown: string): Promise<string>;
+  /** Stores a file the agent made (a PDF or a picture; same private bucket and folder as materials) and returns a link that works for a week. */
+  saveFile(fileName: string, bytes: Uint8Array, contentType: string): Promise<string>;
   getProfile(): Promise<Profile>;
   /** Saves only the fields in `patch`. */
   saveProfile(patch: Partial<Profile>): Promise<void>;
@@ -50,8 +52,17 @@ export interface Store {
   downloadUpload(path: string, maxBytes: number): Promise<Uint8Array | null>;
   /** Removes an uploaded file once it has been read (best effort: a failure never stops the request). */
   deleteUpload(path: string): Promise<void>;
-  saveDocument(doc: { name: string; text: string; pages: number }): Promise<string>;
+  saveDocument(doc: NewDocument): Promise<string>;
   getDocument(id: string): Promise<StoredDocument | null>;
+}
+
+export interface NewDocument {
+  name: string;
+  text: string;
+  pages: number;
+  kind: 'pdf' | 'text' | 'image';
+  /** Where the original file stays, in the private "uploads" bucket. */
+  filePath: string;
 }
 
 export interface StoredDocument {
@@ -59,6 +70,7 @@ export interface StoredDocument {
   name: string;
   pages: number;
   text: string;
+  kind: 'pdf' | 'text' | 'image';
 }
 
 export interface RestConfig {
@@ -186,11 +198,19 @@ export class RestStore implements Store {
   }
 
   async saveMaterial(fileName: string, markdown: string): Promise<string> {
+    return this.putMaterial(fileName, markdown, 'text/markdown; charset=utf-8');
+  }
+
+  async saveFile(fileName: string, bytes: Uint8Array, contentType: string): Promise<string> {
+    return this.putMaterial(fileName, bytes, contentType);
+  }
+
+  private async putMaterial(fileName: string, body: string | Uint8Array, contentType: string): Promise<string> {
     const path = `${this.c.userId}/${fileName}`.split('/').map(encodeURIComponent).join('/');
     await this.call('material', `${this.c.supabaseUrl}/storage/v1/object/materials/${path}`, {
       method: 'POST',
-      body: markdown,
-      headers: { 'Content-Type': 'text/markdown; charset=utf-8', 'x-upsert': 'true' },
+      body,
+      headers: { 'Content-Type': contentType, 'x-upsert': 'true' },
     });
     const signed = (await this.call('material', `${this.c.supabaseUrl}/storage/v1/object/sign/materials/${path}`, {
       method: 'POST',
@@ -256,10 +276,10 @@ export class RestStore implements Store {
     }
   }
 
-  async saveDocument(doc: { name: string; text: string; pages: number }): Promise<string> {
+  async saveDocument(doc: NewDocument): Promise<string> {
     const rows = (await this.rest('document', 'documents?select=id', {
       method: 'POST',
-      json: { user_id: this.c.userId, name: doc.name, text: doc.text, pages: doc.pages },
+      json: { user_id: this.c.userId, name: doc.name, text: doc.text, pages: doc.pages, kind: doc.kind, file_path: doc.filePath },
       headers: { Prefer: 'return=representation' },
     })) as { id: string }[];
     if (!rows?.[0]?.id) throw new StoreError('document', 0);
@@ -267,7 +287,7 @@ export class RestStore implements Store {
   }
 
   async getDocument(id: string): Promise<StoredDocument | null> {
-    const rows = (await this.rest('document', `documents?id=eq.${encodeURIComponent(id)}&select=id,name,pages,text&limit=1`)) as StoredDocument[];
+    const rows = (await this.rest('document', `documents?id=eq.${encodeURIComponent(id)}&select=id,name,pages,text,kind&limit=1`)) as StoredDocument[];
     return rows[0] ?? null;
   }
 }

@@ -2,9 +2,13 @@
 // input is returned AS the result (so it can fix it and retry); a broken store throws and ends the request.
 
 import { verifyLinks } from './links.ts';
+import { generateImage, ImageError, IMAGES, isShape } from './images.ts';
+import { makePdf } from './makepdf.ts';
+import type { PdfMakeLoader } from './makepdf.ts';
 import { isDate, validatePlan } from './plan.ts';
 import type { PdfLoader } from './pdf.ts';
 import type { Mode } from './prompt.ts';
+import { StoreError } from './store.ts';
 import type { Store } from './store.ts';
 import type { MuseConfig } from './muse.ts';
 import { searchWithMuse } from './search.ts';
@@ -20,12 +24,26 @@ export interface ToolEnv {
   randomId: () => string;
   muse?: MuseConfig;
   searchModel?: string;
+  imageModel?: string;
+  /** The anonymous account id, passed to the image service so it can spot abuse. */
+  userId?: string;
+  /** How many more pictures this request may make. */
+  images?: { left: number };
   loadPdf?: PdfLoader;
+  loadPdfMaker?: PdfMakeLoader;
+}
+
+export interface Artifact {
+  type: 'image' | 'pdf' | 'markdown';
+  title: string;
+  url: string;
 }
 
 export interface ToolOutcome {
   content: string;
   planSaved?: boolean;
+  /** Something the phone can show the user (a picture the agent made). */
+  artifact?: Artifact;
 }
 
 const json = (v: unknown): string => JSON.stringify(v);
@@ -103,9 +121,41 @@ export async function runServerTool(name: string, args: Record<string, unknown>,
       const markdown = typeof args.markdown === 'string' ? args.markdown.trim() : '';
       if (!title || title.length > 80) return problem('title is required (at most 80 characters).');
       if (!markdown || markdown.length > 6000) return problem('markdown is required (at most 6000 characters).');
-      const fileName = `${env.planDate}-${slug(title)}-${env.randomId().slice(0, 8)}.md`;
-      const url = await env.store.saveMaterial(fileName, `# ${title}\n\n${markdown}\n`);
-      return { content: json({ title, url }) };
+      if (args.format !== undefined && args.format !== 'pdf' && args.format !== 'markdown') return problem('format must be pdf or markdown.');
+      const base = `${env.planDate}-${slug(title)}-${env.randomId().slice(0, 8)}`;
+      if (args.format !== 'markdown') {
+        try {
+          const made = await makePdf(title, markdown, env.loadPdfMaker);
+          const url = await env.store.saveFile(`${base}.pdf`, made.bytes, 'application/pdf');
+          const note = made.replaced > 0 ? `${made.replaced} character(s) outside the Latin alphabet could not be drawn and show as "?". For another script, call again with format "markdown".` : undefined;
+          return { content: json({ title, url, format: 'pdf', pages: made.pages, ...(note ? { note } : {}) }), artifact: { type: 'pdf', title, url } };
+        } catch (e) {
+          if (e instanceof StoreError) throw e;
+          console.error('pdf failed, saving markdown instead:', (e as Error)?.name, String((e as Error)?.message ?? '').slice(0, 120));
+        }
+      }
+      const url = await env.store.saveMaterial(`${base}.md`, `# ${title}\n\n${markdown}\n`);
+      return { content: json({ title, url, format: 'markdown' }), artifact: { type: 'markdown', title, url } };
+    }
+
+    case 'create_image': {
+      const title = typeof args.title === 'string' ? args.title.trim() : '';
+      const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
+      if (!title || title.length > 80) return problem('title is required (at most 80 characters).');
+      if (!prompt || prompt.length > IMAGES.maxPromptChars) return problem(`prompt is required (at most ${IMAGES.maxPromptChars} characters).`);
+      if (args.shape !== undefined && !isShape(args.shape)) return problem('shape must be square, portrait or landscape.');
+      if (!env.muse) return problem('Picture making is not set up on this server.');
+      if (env.images && env.images.left <= 0) return problem('No more pictures can be made in this request.');
+      try {
+        const made = await generateImage(prompt, env.muse, { shape: args.shape as never, model: env.imageModel, user: env.userId }, env.fetchImpl);
+        if (env.images) env.images.left--;
+        const fileName = `images/${env.planDate}-${slug(title)}-${env.randomId().slice(0, 8)}.${made.type.ext}`;
+        const url = await env.store.saveFile(fileName, made.bytes, made.type.mime);
+        return { content: json({ title, url }), artifact: { type: 'image', title, url } };
+      } catch (e) {
+        if (e instanceof ImageError) return problem(e.message);
+        throw e;
+      }
     }
 
     case 'fetch_url': {

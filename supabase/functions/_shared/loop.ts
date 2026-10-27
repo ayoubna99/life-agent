@@ -12,6 +12,8 @@ import type { Mode } from './prompt.ts';
 import type { PdfLoader } from './pdf.ts';
 import type { Store } from './store.ts';
 import { runServerTool } from './tools.ts';
+import type { Artifact } from './tools.ts';
+import type { PdfMakeLoader } from './makepdf.ts';
 
 export const LIMITS = {
   maxSteps: 6,
@@ -22,6 +24,7 @@ export const LIMITS = {
   maxReportItems: 20,
   maxReportChars: 120,
   maxAttachments: 3,
+  maxImagesPerRequest: 2,
 };
 
 export class BadRequest extends Error {
@@ -84,8 +87,8 @@ export interface ChatRequest {
 }
 
 export type ChatResponse =
-  | { type: 'text'; conversation_id: string; text: string; plan_saved: boolean }
-  | { type: 'tool_calls'; conversation_id: string; calls: { id: string; name: string; args: Record<string, unknown> }[]; plan_saved: boolean };
+  | { type: 'text'; conversation_id: string; text: string; plan_saved: boolean; artifacts: Artifact[] }
+  | { type: 'tool_calls'; conversation_id: string; calls: { id: string; name: string; args: Record<string, unknown> }[]; plan_saved: boolean; artifacts: Artifact[] };
 
 export interface ChatDeps {
   cfg: MuseConfig;
@@ -97,7 +100,9 @@ export interface ChatDeps {
   fetchImpl?: typeof fetch;
   randomId?: () => string;
   searchModel?: string;
+  imageModel?: string;
   loadPdf?: PdfLoader;
+  loadPdfMaker?: PdfMakeLoader;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -207,7 +212,10 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
     for (const id of req.input.attachments ?? []) {
       const doc = await store.getDocument(id);
       if (!doc) throw new BadRequest('attachment_not_found');
-      text += `\n\n[Attached document: "${doc.name.replace(/["\n]/g, ' ')}", ${doc.pages} page(s), document_id=${doc.id}]`;
+      const label = doc.name.replace(/["\n]/g, ' ');
+      text += doc.kind === 'image'
+        ? `\n\n[Attached photo: "${label}", read by a vision model so the text may contain mistakes, document_id=${doc.id}]`
+        : `\n\n[Attached document: "${label}", ${doc.pages} page(s), document_id=${doc.id}]`;
     }
     toStore.push({ role: 'user', content: text });
   } else {
@@ -235,6 +243,8 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
   });
   const tools = toolsFor(req.mode);
   let planSaved = false;
+  const artifacts: Artifact[] = [];
+  const images = { left: LIMITS.maxImagesPerRequest };
 
   for (let step = 0; step < LIMITS.maxSteps; step++) {
     const answer = await callMuse(deps.cfg, [{ role: 'system', content: system }, ...history], tools, fetchImpl);
@@ -242,7 +252,7 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
     if (answer.kind === 'text') {
       const msg: ChatMessage = { role: 'assistant', content: answer.text };
       await store.appendMessages(conversationId, [msg]);
-      return { type: 'text', conversation_id: conversationId, text: answer.text, plan_saved: planSaved };
+      return { type: 'text', conversation_id: conversationId, text: answer.text, plan_saved: planSaved, artifacts };
     }
 
     // The model may only ask for tools this mode has.
@@ -267,9 +277,14 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
         randomId,
         muse: deps.cfg,
         searchModel: deps.searchModel,
+        imageModel: deps.imageModel,
+        userId: deps.userId,
+        images,
         loadPdf: deps.loadPdf,
+        loadPdfMaker: deps.loadPdfMaker,
       });
       if (out.planSaved) planSaved = true;
+      if (out.artifact) artifacts.push(out.artifact);
       answers.push({ role: 'tool', tool_call_id: call.id, content: out.content });
     }
     // Server answers are stored now. The device ones are stored when the phone reports back.
@@ -278,7 +293,7 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
       history.push(...answers);
     }
     if (device.length) {
-      return { type: 'tool_calls', conversation_id: conversationId, calls: device.map((c) => ({ id: c.id, name: c.name, args: c.args })), plan_saved: planSaved };
+      return { type: 'tool_calls', conversation_id: conversationId, calls: device.map((c) => ({ id: c.id, name: c.name, args: c.args })), plan_saved: planSaved, artifacts };
     }
   }
   throw new MuseError('bad_output');

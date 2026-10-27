@@ -4,6 +4,8 @@ import { BadRequest, CapacityReached, DEFAULT_DAILY_LIMIT, DEFAULT_GLOBAL_LIMIT,
 import { configFromEnv, MuseError } from './muse.ts';
 import { ASR_MODEL, languageBias, transcribeWav } from './asr.ts';
 import { runNudge, parseNudgeRequest } from './nudge.ts';
+import { describeImage, describePdf, IMAGES, ImageError, sniffImage } from './images.ts';
+import type { PdfMakeLoader } from './makepdf.ts';
 import { extractPdfText, isPdf } from './pdf.ts';
 import { parseWav, WavError } from './wav.ts';
 import type { PdfLoader } from './pdf.ts';
@@ -18,6 +20,7 @@ export interface HandlerEnv {
   /** Tests inject a store; production builds a RestStore from the caller's token. */
   storeFor?: (userId: string, jwt: string, apikey: string) => Store;
   loadPdf?: PdfLoader;
+  loadPdfMaker?: PdfMakeLoader;
 }
 
 const json = (body: unknown, status = 200): Response =>
@@ -96,7 +99,9 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
           ...limits,
           fetchImpl: env.fetchImpl,
           searchModel: env.get('SEARCH_MODEL')?.trim() || undefined,
+          imageModel: env.get('IMAGE_MODEL')?.trim() || undefined,
           loadPdf: env.loadPdf,
+          loadPdfMaker: env.loadPdfMaker,
         });
         return json(result);
       }
@@ -126,11 +131,38 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
         if (!bytes) throw new BadRequest('file_not_found');
         let text: string;
         let pages = 1;
-        if (isPdf(bytes)) {
+        let kind: 'pdf' | 'text' | 'image' = 'text';
+        let readBy: 'text' | 'vision' = 'text';
+        const image = sniffImage(bytes);
+        if (image) {
+          // A photo: Muse Spark reads it once. The text is what the agent works with; the photo itself stays in "uploads".
+          if (bytes.length > IMAGES.maxInputBytes) throw new BadRequest('image_too_large');
+          await spendQuota(store, limits);
+          kind = 'image';
+          readBy = 'vision';
+          try {
+            text = await describeImage(bytes, image, configFromEnv((n) => env.get(n)), env.fetchImpl);
+          } catch (e) {
+            if (e instanceof ImageError) throw new BadRequest('image_unreadable');
+            throw e;
+          }
+        } else if (isPdf(bytes)) {
+          kind = 'pdf';
           try {
             ({ text, pages } = await extractPdfText(bytes, env.loadPdf));
           } catch {
             throw new BadRequest('pdf_unreadable');
+          }
+          if (text.trim() === '') {
+            // No text layer (a scan, or slides that are pictures): Muse Spark reads the pages as images instead.
+            await spendQuota(store, limits);
+            readBy = 'vision';
+            try {
+              text = await describePdf(bytes, name, configFromEnv((n) => env.get(n)), env.fetchImpl);
+            } catch (e) {
+              if (e instanceof ImageError) throw new BadRequest('no_text_in_document');
+              throw e;
+            }
           }
         } else {
           text = new TextDecoder('utf-8', { fatal: false }).decode(bytes).replace(/\u0000/g, '').trim();
@@ -139,9 +171,9 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
         if (text.trim() === '') throw new BadRequest('no_text_in_document');
         const truncated = text.length > MAX_DOC_CHARS;
         if (truncated) text = text.slice(0, MAX_DOC_CHARS);
-        const id = await store.saveDocument({ name, text, pages });
-        await store.deleteUpload(path); // the text is kept, the original file is not
-        return json({ document_id: id, name, pages, chars: text.length, truncated });
+        const id = await store.saveDocument({ name, text, pages, kind, filePath: path });
+        // The original file is kept in "uploads/<your id>/", private to the user, next to its text.
+        return json({ document_id: id, name, kind, read_by: readBy, pages, chars: text.length, truncated, file_path: path });
       }
       case 'transcribe': {
         // The phone uploaded a short WAV recording to Storage; we send it to Muse Voice Transcribe and return the text.

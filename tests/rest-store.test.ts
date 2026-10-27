@@ -120,11 +120,11 @@ test('uploads are downloaded with the caller token, and a missing or oversize fi
 });
 
 test('documents are stored once and read back by id', async () => {
-  const { s, seen } = store((x) => (x.method === 'POST' ? json([{ id: 'doc-1' }]) : json([{ id: 'doc-1', name: 'n.pdf', pages: 2, text: 'hello' }])));
-  assert.equal(await s.saveDocument({ name: 'n.pdf', text: 'hello', pages: 2 }), 'doc-1');
-  assert.deepEqual(seen[0].body, { user_id: USER, name: 'n.pdf', text: 'hello', pages: 2 });
-  assert.deepEqual(await s.getDocument('doc-1'), { id: 'doc-1', name: 'n.pdf', pages: 2, text: 'hello' });
-  assert.match(seen[1].url, /documents\?id=eq\.doc-1&select=id,name,pages,text&limit=1$/);
+  const { s, seen } = store((x) => (x.method === 'POST' ? json([{ id: 'doc-1' }]) : json([{ id: 'doc-1', name: 'n.pdf', pages: 2, text: 'hello', kind: 'pdf' }])));
+  assert.equal(await s.saveDocument({ name: 'n.pdf', text: 'hello', pages: 2, kind: 'pdf', filePath: `${USER}/n.pdf` }), 'doc-1');
+  assert.deepEqual(seen[0].body, { user_id: USER, name: 'n.pdf', text: 'hello', pages: 2, kind: 'pdf', file_path: `${USER}/n.pdf` });
+  assert.deepEqual(await s.getDocument('doc-1'), { id: 'doc-1', name: 'n.pdf', pages: 2, text: 'hello', kind: 'pdf' });
+  assert.match(seen[1].url, /documents\?id=eq\.doc-1&select=id,name,pages,text,kind&limit=1$/);
 });
 
 test('deleting an upload uses the caller token and never throws', async () => {

@@ -31,7 +31,7 @@ Send **summaries**, never the raw event log.
 - The server keeps the conversation. Send only the new message, or the results of device tools.
 - Answer, text: `{"type":"text","conversation_id":"...","text":"...","plan_saved":false}`.
 - Answer, device tools to run on the phone:
-  `{"type":"tool_calls","conversation_id":"...","calls":[{"id":"call_1","name":"set_app_limit","args":{"app":"Instagram","minutes_per_day":30}}],"plan_saved":false}`
+  `{"type":"tool_calls","conversation_id":"...","calls":[{"id":"call_1","name":"set_app_limit","args":{"app":"Instagram","minutes_per_day":30}}],"plan_saved":false,"artifacts":[]}`
   Run each, then send them ALL back (any order, exactly those ids):
   ```json
   {"action":"chat","mode":"execute","today":"...","date":"...","conversation_id":"...",
@@ -39,6 +39,7 @@ Send **summaries**, never the raw event log.
   ```
   `content` is a string (JSON is fine). If a tool failed, say so in it: the agent tells the user.
 - `plan_saved: true` means a plan was saved during this request; call `plan` to read it.
+- `artifacts` lists what the agent made during this request for the phone to show: `[{"type":"pdf"|"image"|"markdown","title":"My day card","url":"https://..."}]` (links valid for a week; the file stays in Storage).
 
 - A user message may carry `"attachments":["<document id>", ...]` (up to 3, from the `attach` action). The agent
   is told the document names and reads them with `read_document`.
@@ -49,7 +50,8 @@ Send **summaries**, never the raw event log.
 | `get_usage(app, days?)` | server | planning, review | reads the uploaded usage |
 | `get_plan(date)` | server | execute, review | reads the saved plan |
 | `save_plan(wake?, sleep?, tasks[], limits[], note?)` | server | planning, review | validates and stores the plan for `date`; drops dead links |
-| `create_material(title, markdown)` | server | planning, review | saves a study sheet, returns a link valid for a week |
+| `create_material(title, markdown, format?)` | server | planning, review | writes a study or work sheet as a **PDF** (default, A4, drawn from the markdown: headings, bullets, numbered lists, simple tables) or as `markdown`; stores it in `materials/<user id>/` and returns a link valid for a week. The PDF fonts are Latin only; other scripts show as `?` and the agent is told to use `markdown` instead. Appears in the chat answer's `artifacts` as `pdf` or `markdown` |
+| `create_image(title, prompt, shape?)` | server | planning, review | makes one picture with Muse Image (`square`, `portrait` or `landscape`), stores it in `materials/<user id>/images/` and returns a link valid for a week. Max 2 per request. It also appears in the chat answer's `artifacts` |
 | `fetch_url(url, offset?)` | server | planning, review | reads a public web page or PDF (12 000 characters at a time) |
 | `web_search(query)` | server | planning, review | Muse's built-in `web_search` (Responses API, `/responses`): returns `{answer, sources[{title,url}], searched}`. Optional `SEARCH_MODEL` secret |
 | `read_document(document_id, offset?)` | server | planning, review | reads a document the user attached |
@@ -65,13 +67,20 @@ Send **summaries**, never the raw event log.
 Only the fields sent are saved. Without `set` it just reads. Answer: `{"profile":{"wake":"07:00","sleep":"23:30","apps":[...],"focus":"..."}}`.
 The agent receives these as known facts and never asks for them.
 
-## action: "attach"  (a PDF or text file the user sends)
+## action: "attach"  (a PDF, a photo or a text file the user sends)
 1. The phone uploads the file to Storage: `POST {SUPABASE_URL}/storage/v1/object/uploads/<user id>/<file name>`
-   with the user's token (max 10 MB).
+   with the user's token (max 10 MB). **Photos:** PNG, JPEG or WebP, **at most 5 MB** (the type is read from the bytes).
 2. `{"action":"attach","path":"<user id>/<file name>","name":"Lecture 3.pdf"}` ->
-   `{"document_id":"...","name":"...","pages":12,"chars":41000,"truncated":false}`.
-   Errors: `bad_path`, `file_not_found`, `pdf_unreadable`, `no_text_in_document` (a scan), `unsupported_file`.
-3. Send `document_id` in `attachments` of the next chat message.
+   `{"document_id":"...","name":"...","kind":"pdf","pages":12,"chars":41000,"truncated":false,"file_path":"<user id>/<file name>"}`.
+   `kind` is `pdf`, `text` or `image`; `read_by` is `text` (read on the server, free) or `vision`. A photo is read once by Muse Spark
+   (it transcribes the text and describes the layout). A PDF with no text layer (a scan, slides that are pictures) is also
+   sent to Muse Spark, which reads the pages as images (Meta converts the first 50 pages). Both count as one request against the daily caps.
+   Errors: `bad_path`, `file_not_found`, `pdf_unreadable`, `no_text_in_document` (a scan), `unsupported_file`,
+   `image_too_large`, `image_unreadable`, `daily_limit_reached`, `demo_at_capacity`.
+3. Send `document_id` in `attachments` of the next chat message. The agent sees a photo as text (with a warning that it
+   may be misread) and opens it with `read_document`.
+4. **Where files are kept:** the original stays in the private Storage bucket `uploads`, in the user's own folder
+   (`uploads/<user id>/...`); the text is in the `documents` table (`kind`, `file_path`). Only the owner can read either.
 
 ## action: "transcribe"  (the user talks instead of typing)
 1. The phone records, wraps the audio in a WAV header (**mono, 16-bit, 16 or 24 kHz**, under 10 minutes; the 10 MB

@@ -24,7 +24,7 @@ Plan the day in "plan_date" with the user. The settings in the Context (wake, sl
 Ask only about what you still need, one or two questions at a time: the tasks they want done, and deadlines or fixed commitments. Use get_usage for their distracting apps to see how much time those really take, and say what you see.
 YOU decide how long each task takes: never ask the user for a duration. Estimate it yourself from the task, the deadline and what the user has told you, state it in one short line, and move on. Change it only if the user objects.
 For each task: break it into a first step they can start in under 5 minutes, and write short step-by-step instructions. Schedule tasks inside the waking hours, not later than an hour before sleep, with breaks.
-The user may send a link or a document ("memorise this page", "summarise this for tomorrow"): read it with fetch_url or read_document, then call create_material to prepare a short summary or study sheet with the key points (and a few self-test questions if they want to memorise), and add a task such as "Review the sheet" with the returned link. Use web_search and fetch_url when a task needs facts or a good resource; add only links you actually opened.
+The user may send a link or a document ("memorise this page", "summarise this for tomorrow"): read it with fetch_url or read_document, then call create_material to prepare a short summary or study sheet (a PDF; use format "markdown" only if asked or if the text is not in the Latin alphabet) with the key points (and a few self-test questions if they want to memorise), and add a task such as "Review the sheet" with the returned link. The user may also send a photo (a timetable, a whiteboard, a list): it is already read for you, so open it with read_document like any document, and tell the user if it looks like it was misread. Make a picture with create_image only when the user asks for one or for a shareable card of their day: describe it in plain words, keep any text in it very short, show no real people, and never use it for health claims. Use web_search and fetch_url when a task needs facts or a good resource; add only links you actually opened.
 Choose daily limits for the distracting apps from their real usage (a realistic cut, not zero).
 When you have what you need, summarise the plan in a few lines and ask the user to confirm. When they confirm, call save_plan once with the whole plan, then tell them it is ready. Do not prolong the conversation afterwards.`;
 
@@ -144,10 +144,24 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     where: 'server',
     modes: ['planning', 'review'],
-    def: fn('create_material', 'Prepare a short study or work sheet (markdown) for a task. Returns a link to put in the task.', {
+    def: fn('create_material', 'Prepare a short study or work sheet for a task and save it as a PDF (default) or markdown file. Write the content in markdown (headings, bullets, numbered lists, simple tables). Returns a link to put in the task.', {
       type: 'object',
-      properties: { title: { type: 'string', maxLength: 80 }, markdown: { type: 'string', maxLength: 6000 } },
+      properties: { title: { type: 'string', maxLength: 80 }, markdown: { type: 'string', maxLength: 6000 }, format: { type: 'string', enum: ['pdf', 'markdown'] } },
       required: ['title', 'markdown'],
+      additionalProperties: false,
+    }),
+  },
+  {
+    where: 'server',
+    modes: ['planning', 'review'],
+    def: fn('create_image', 'Make one picture with Muse Image (for example a shareable card of the day) and return a link. Only when the user wants a picture.', {
+      type: 'object',
+      properties: {
+        title: { type: 'string', maxLength: 80 },
+        prompt: { type: 'string', maxLength: 1000, description: 'What the picture shows, in plain words.' },
+        shape: { type: 'string', enum: ['square', 'portrait', 'landscape'] },
+      },
+      required: ['title', 'prompt'],
       additionalProperties: false,
     }),
   },

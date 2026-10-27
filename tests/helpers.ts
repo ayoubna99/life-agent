@@ -3,7 +3,7 @@ import type { PlanData } from '../supabase/functions/_shared/plan.ts';
 import type { Mode } from '../supabase/functions/_shared/prompt.ts';
 import { StoreError } from '../supabase/functions/_shared/store.ts';
 import type { Profile } from '../supabase/functions/_shared/profile.ts';
-import type { SavedPlan, Store, StoredDocument, UsageRow } from '../supabase/functions/_shared/store.ts';
+import type { NewDocument, SavedPlan, Store, StoredDocument, UsageRow } from '../supabase/functions/_shared/store.ts';
 
 export const SUPABASE_URL = 'https://proj.supabase.co';
 export const USER = '00000000-0000-0000-0000-00000000000a';
@@ -81,13 +81,20 @@ export class MemoryStore implements Store {
     return b && b.length <= maxBytes ? b : null;
   }
   deleted: string[] = [];
+  docFiles = new Map<string, string>();
+  files = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  async saveFile(fileName: string, bytes: Uint8Array, contentType: string) {
+    this.files.set(fileName, { bytes, contentType });
+    return `${SUPABASE_URL}/storage/v1/object/sign/materials/${USER}/${fileName}?token=t`;
+  }
   async deleteUpload(path: string) {
     this.uploads.delete(path);
     this.deleted.push(path);
   }
-  async saveDocument(doc: { name: string; text: string; pages: number }) {
+  async saveDocument(doc: NewDocument) {
     const id = `d0000000-0000-0000-0000-${String(++this.n).padStart(12, '0')}`;
-    this.documents.set(id, { id, ...doc });
+    this.documents.set(id, { id, name: doc.name, text: doc.text, pages: doc.pages, kind: doc.kind });
+    this.docFiles.set(id, doc.filePath);
     return id;
   }
   async getDocument(id: string) {
@@ -173,6 +180,9 @@ export function makePdf(pages: string[]): Uint8Array {
 }
 
 /** The PDF library as the tests load it (Deno loads "npm:unpdf" itself). */
+/** The PDF writer as the tests load it (Deno loads "npm:pdf-lib" itself). */
+export const realPdfMakeLoader = () => import('pdf-lib') as unknown as Promise<import('../supabase/functions/_shared/makepdf.ts').PdfMakeLib>;
+
 export const realPdfLoader = () => import('unpdf') as unknown as Promise<import('../supabase/functions/_shared/pdf.ts').PdfLib>;
 
 /** A WAV file of silence (or a quiet tone) with the given format. */

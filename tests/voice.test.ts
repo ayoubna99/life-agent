@@ -164,11 +164,14 @@ test('transcribe counts against the daily limit and passes a failing Meta call o
   assert.equal((await r.json()).error.code, 'agent_upstream_status');
 });
 
-test('attach now deletes the original file once its text is saved', async () => {
+test('attach keeps the original file, next to its saved text', async () => {
   const store = new MemoryStore();
   store.uploads.set(`${USER}/notes.txt`, new TextEncoder().encode('remember the pivot'));
   const r = await http({ action: 'attach', path: `${USER}/notes.txt` }, store, () => ok('')).res;
   assert.equal(r.status, 200);
-  assert.deepEqual(store.deleted, [`${USER}/notes.txt`]);
+  assert.deepEqual(store.deleted, []);
+  assert.ok(store.uploads.has(`${USER}/notes.txt`), 'the original stays in uploads');
   assert.equal(store.documents.size, 1);
+  assert.deepEqual([...store.docFiles.values()], [`${USER}/notes.txt`]);
+  assert.equal([...store.documents.values()][0].kind, 'text');
 });

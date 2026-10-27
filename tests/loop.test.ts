@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { BadRequest, CapacityReached, LIMITS, NotFound, parseChatRequest, QuotaExceeded, runChat } from '../supabase/functions/_shared/loop.ts';
 import type { ChatRequest } from '../supabase/functions/_shared/loop.ts';
 import { MuseError } from '../supabase/functions/_shared/muse.ts';
-import { callsReply, cfg, fakeNet, MemoryStore, SUPABASE_URL, textReply, USER } from './helpers.ts';
+import { callsReply, cfg, fakeNet, MemoryStore, realPdfMakeLoader, SUPABASE_URL, textReply, USER } from './helpers.ts';
 import type { FakeNet } from './helpers.ts';
 
 const base = (over: Partial<ChatRequest> = {}): ChatRequest => ({
@@ -19,7 +19,7 @@ function setup(replies: unknown[], others: Record<string, number | 'network'> = 
   const store = new MemoryStore();
   const net = fakeNet(replies, others);
   const run = (req: ChatRequest) =>
-    runChat(req, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit, globalLimit: 1000, fetchImpl: net.fetchImpl, randomId: () => 'abcdef1234567890' });
+    runChat(req, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit, globalLimit: 1000, fetchImpl: net.fetchImpl, randomId: () => 'abcdef1234567890', loadPdfMaker: realPdfMakeLoader });
   return { store, net, run };
 }
 
@@ -48,7 +48,7 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(sys.content!, /today: 2026-10-26/);
   assert.match(sys.content!, /plan_date: 2026-10-27/);
   assert.match(sys.content!, /user_language: fr/);
-  assert.deepEqual(names(planning.net), ['get_usage', 'save_plan', 'create_material', 'fetch_url', 'web_search', 'read_document']);
+  assert.deepEqual(names(planning.net), ['get_usage', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document']);
 
   const execute = setup([textReply('ok')]);
   await execute.run(base({ mode: 'execute' }));
@@ -61,7 +61,7 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(content, /Mode: review/);
   assert.match(content, /review_date: 2026-10-26/);
   assert.match(content, /tasks_missed: \["Gym"\]/);
-  assert.deepEqual(names(review.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'fetch_url', 'web_search', 'read_document']);
+  assert.deepEqual(names(review.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document']);
 });
 
 test('the conversation is remembered: the second request sends only the new message and the model sees all of it', async () => {
@@ -133,13 +133,27 @@ test('save_plan drops dead links, keeps live and our own, and says which it drop
   assert.deepEqual(answer.dropped_links.sort(), ['https://dead.example/a', 'https://dead.example/b']);
 });
 
-test('create_material saves a file in the user folder and hands the model the link', async () => {
+test('create_material saves a PDF in the user folder and hands the model the link', async () => {
   const { store, net, run } = setup([callsReply(['create_material', { title: 'Sorting: Big-O cheat sheet!', markdown: '- bubble sort O(n^2)' }]), textReply('Done.')]);
-  await run(base());
+  const r = await run(base());
+  const name = '2026-10-27-sorting-big-o-cheat-sheet-abcdef12.pdf';
+  assert.deepEqual([...store.files.keys()], [name]);
+  assert.equal(store.files.get(name)!.contentType, 'application/pdf');
+  assert.equal(new TextDecoder().decode(store.files.get(name)!.bytes.subarray(0, 5)), '%PDF-');
+  assert.equal(store.materials.size, 0, 'no markdown copy');
+  const answer = JSON.parse(net.museRequests[1].messages.find((m) => m.role === 'tool')!.content!);
+  assert.match(answer.url, /^https:\/\/proj\.supabase\.co\/storage\/v1\/object\/sign\/materials\/.*\.pdf/);
+  assert.equal(answer.format, 'pdf');
+  assert.deepEqual(r.artifacts.map((a) => a.type), ['pdf']);
+});
+
+test('create_material with format markdown still saves the .md file', async () => {
+  const { store, run } = setup([callsReply(['create_material', { title: 'Sorting: Big-O cheat sheet!', markdown: '- bubble sort O(n^2)', format: 'markdown' }]), textReply('Done.')]);
+  const r = await run(base());
   assert.deepEqual([...store.materials.keys()], ['2026-10-27-sorting-big-o-cheat-sheet-abcdef12.md']);
   assert.equal(store.materials.get('2026-10-27-sorting-big-o-cheat-sheet-abcdef12.md'), '# Sorting: Big-O cheat sheet!\n\n- bubble sort O(n^2)\n');
-  const answer = JSON.parse(net.museRequests[1].messages.find((m) => m.role === 'tool')!.content!);
-  assert.match(answer.url, /^https:\/\/proj\.supabase\.co\/storage\/v1\/object\/sign\/materials\//);
+  assert.equal(store.files.size, 0);
+  assert.deepEqual(r.artifacts.map((a) => a.type), ['markdown']);
 });
 
 test('execute mode: device tool calls go to the phone, its results come back, then the agent finishes', async () => {

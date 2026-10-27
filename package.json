@@ -6,6 +6,7 @@
     "test": "node --experimental-strip-types --no-warnings --test \"tests/*.test.ts\""
   },
   "devDependencies": {
+    "pdf-lib": "^1.17.1",
     "unpdf": "^1.9.1"
   }
 }

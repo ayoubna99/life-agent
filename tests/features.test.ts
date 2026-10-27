@@ -8,7 +8,7 @@ import { cleanMessage, parseNudgeRequest, pickNextTask, runNudge } from '../supa
 import { toHHMM, toMinutes, validateProfile } from '../supabase/functions/_shared/profile.ts';
 import { runServerTool } from '../supabase/functions/_shared/tools.ts';
 import type { ToolEnv } from '../supabase/functions/_shared/tools.ts';
-import { callsReply, cfg, fakeNet, jwt, makePdf, MemoryStore, realPdfLoader, SUPABASE_URL, textReply, USER } from './helpers.ts';
+import { callsReply, cfg, fakeNet, jwt, makePdf, MemoryStore, realPdfLoader, realPdfMakeLoader, SUPABASE_URL, textReply, USER } from './helpers.ts';
 
 // ---------- profile ----------
 
@@ -201,15 +201,15 @@ test('the whole study flow: link in, summary sheet out, review task saved with t
   const net = fakeNet([
     callsReply(['fetch_url', { url: 'https://course.example/merge-sort' }]),
     callsReply(['create_material', { title: 'Merge sort in one page', markdown: '- split\n- sort halves\n- merge\n\nQ: complexity?' }]),
-    callsReply(['save_plan', { tasks: [{ title: 'Review the merge sort sheet', minutes: 20, start_time: '19:00', links: [`${SUPABASE_URL}/storage/v1/object/sign/materials/${USER}/2026-10-27-merge-sort-in-one-page-abcdef12.md?token=t`] }] }]),
+    callsReply(['save_plan', { tasks: [{ title: 'Review the merge sort sheet', minutes: 20, start_time: '19:00', links: [`${SUPABASE_URL}/storage/v1/object/sign/materials/${USER}/2026-10-27-merge-sort-in-one-page-abcdef12.pdf?token=t`] }] }]),
     textReply('Your plan is ready: a 20 minute review at 19:00.'),
   ]);
   // The agent loop gets the page through the same fetch as the model; route by URL.
   const fetchImpl = (async (url: string, init?: RequestInit) => (url.startsWith('https://muse.example') ? net.fetchImpl(url, init as RequestInit) : page(url))) as unknown as typeof fetch;
-  const r = await runChat({ ...base, input: { type: 'user', text: 'I want to memorise https://course.example/merge-sort for tomorrow' } }, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit: 80, globalLimit: 1000, fetchImpl, randomId: () => 'abcdef1234567890' });
+  const r = await runChat({ ...base, input: { type: 'user', text: 'I want to memorise https://course.example/merge-sort for tomorrow' } }, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit: 80, globalLimit: 1000, fetchImpl, randomId: () => 'abcdef1234567890', loadPdfMaker: realPdfMakeLoader });
   assert.equal(r.type, 'text');
   assert.equal(r.plan_saved, true);
-  assert.deepEqual([...store.materials.keys()], ['2026-10-27-merge-sort-in-one-page-abcdef12.md']);
+  assert.deepEqual([...store.files.keys()], ['2026-10-27-merge-sort-in-one-page-abcdef12.pdf']);
   assert.match(store.plans.get('2026-10-27')!.data.tasks[0].links![0], /merge-sort-in-one-page/);
   const pageAnswer = JSON.parse(net.museRequests[1].messages.find((m) => m.role === 'tool')!.content!);
   assert.match(pageAnswer.text, /Merge sort splits the list/);

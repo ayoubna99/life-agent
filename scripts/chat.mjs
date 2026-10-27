@@ -8,7 +8,7 @@
 //   node scripts/chat.mjs --wake 07:00 --sleep 23:30 --apps Instagram,TikTok --focus "my thesis"
 //                                         saves your settings first (what the app asks in its own screens, not in the chat)
 //   node scripts/chat.mjs --attach C:\\path\\lecture.pdf
-//                                         uploads a PDF or .txt/.md and attaches it to your first message
+//                                         uploads a PDF, a photo (.png/.jpg/.webp) or .txt/.md and attaches it to your first message
 //   node scripts/chat.mjs --voice C:\\path\\recording.wav
 //                                         transcribes a WAV (mono, 16-bit, 16 or 24 kHz) with Muse Voice Transcribe and sends the text as your first message
 //   node scripts/chat.mjs nudge --app TikTok --used 52 --limit 60 [--now 17:40]
@@ -151,7 +151,7 @@ if (flag('attach')) {
   const uid = signup.json.user?.id;
   const name = path.basename(file);
   const objectPath = `${uid}/${Date.now()}-${name.replace(/[^\w.-]+/g, '_')}`;
-  const type = /\.pdf$/i.test(name) ? 'application/pdf' : 'text/plain';
+  const type = /\.pdf$/i.test(name) ? 'application/pdf' : /\.png$/i.test(name) ? 'image/png' : /\.jpe?g$/i.test(name) ? 'image/jpeg' : /\.webp$/i.test(name) ? 'image/webp' : 'text/plain';
   const up = await curlUpload(`${url}/storage/v1/object/uploads/${objectPath}`, { apikey: key, Authorization: `Bearer ${token}`, 'Content-Type': type, 'x-upsert': 'true' }, file);
   if (up.status >= 300) {
     console.error(`Upload failed (${up.status}): ${up.text.slice(0, 200)}. Was the third migration applied (npx supabase db push)?`);
@@ -163,7 +163,7 @@ if (flag('attach')) {
     process.exit(1);
   }
   attachments.push(at.json.document_id);
-  console.log(`Attached ${at.json.name}: ${at.json.pages} page(s), ${at.json.chars} characters${at.json.truncated ? ' (cut)' : ''}.`);
+  console.log(`Attached ${at.json.kind} ${at.json.name}: ${at.json.pages} page(s), ${at.json.chars} characters${at.json.truncated ? ' (cut)' : ''}. Original kept at uploads/${at.json.file_path}`);
 }
 
 // A voice message: upload the recording, let the server turn it into text, use the text as the first message.
@@ -248,6 +248,7 @@ async function turn(input) {
     saved ||= r.json.plan_saved;
     if (r.json.type === 'text') {
       console.log(`\nagent> ${r.json.text}`);
+      for (const a of r.json.artifacts ?? []) console.log(`[picture] ${a.title}: ${a.url}`);
       return saved;
     }
     const results = r.json.calls.map((c) => {
