@@ -182,18 +182,28 @@ class SavedPlan {
 
 /// The settings the app asks for in its own screens (never in the chat).
 class Profile {
-  const Profile({this.wake, this.sleep, this.apps = const [], this.focus});
+  const Profile({
+    this.wake,
+    this.sleep,
+    this.apps = const [],
+    this.focus,
+    this.name,
+  });
 
   final String? wake; // HH:MM
   final String? sleep; // HH:MM
   final List<String> apps;
   final String? focus;
 
+  /// First name, asked in the welcome slides.
+  final String? name;
+
   factory Profile.fromJson(Map<String, Object?> j) => Profile(
     wake: j['wake'] as String?,
     sleep: j['sleep'] as String?,
     apps: [for (final a in (j['apps'] as List? ?? const [])) a as String],
     focus: j['focus'] as String?,
+    name: j['name'] as String?,
   );
 
   Map<String, Object?> toJson() => {
@@ -201,6 +211,7 @@ class Profile {
     if (sleep != null) 'sleep': sleep,
     'apps': apps,
     if (focus != null) 'focus': focus,
+    if (name != null) 'name': name,
   };
 }
 

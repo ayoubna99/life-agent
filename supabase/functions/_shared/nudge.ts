@@ -109,6 +109,7 @@ export async function runNudge(
     facts.push(`known_sleep: ${profile.sleep}`, `minutes_until_sleep: ${left}`);
   }
   if (profile.focus) facts.push(`known_focus: ${JSON.stringify(profile.focus)}`);
+  if (profile.name) facts.push(`known_first_name: ${JSON.stringify(profile.name)}`);
   facts.push(
     next
       ? `next_task: ${JSON.stringify({ title: next.title, minutes: next.minutes, first_step: next.first_step ?? null, start_time: next.start_time ?? null })}`

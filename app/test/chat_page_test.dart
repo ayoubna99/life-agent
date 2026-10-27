@@ -99,7 +99,7 @@ void main() {
         findsNothing,
         reason: 'the person does not need to see that',
       );
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byKey(const Key('typing')), findsOneWidget);
       expect(
         t.widget<IconButton>(find.byKey(const Key('send'))).onPressed,
         isNull,
@@ -107,7 +107,7 @@ void main() {
       gate.complete();
       await sending;
       await t.pumpAndSettle();
-      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byKey(const Key('typing')), findsNothing);
       expect(find.text('ok'), findsOneWidget);
     },
   );

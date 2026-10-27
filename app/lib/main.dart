@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'app_services.dart';
 import 'config.dart';
+import 'onboarding/onboarding_page.dart';
 import 'ui/home_page.dart';
+import 'ui/intro.dart';
+import 'ui/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,18 +22,16 @@ class LifeApp extends StatelessWidget {
     return MaterialApp(
       title: 'Life',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF2E6F5E),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFF2E6F5E),
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
+      theme: lifeTheme(Brightness.light),
+      darkTheme: lifeTheme(Brightness.dark),
       home: AppConfig.supabaseKey.isEmpty
           ? const _MissingKey()
-          : HomePage(services: services),
+          : IntroGate(
+              child: OnboardingGate(
+                services: services,
+                child: HomePage(services: services),
+              ),
+            ),
     );
   }
 }

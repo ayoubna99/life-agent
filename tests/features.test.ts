@@ -33,6 +33,10 @@ test('a profile patch keeps only what was sent and refuses the rest', () => {
   bad({ apps: [''] }, 'bad_apps');
   bad({ apps: ['x'.repeat(61)] }, 'bad_apps');
   bad({ focus: 'x'.repeat(201) }, 'bad_focus');
+  bad({ name: 'x'.repeat(41) }, 'bad_name');
+  bad({ name: 3 }, 'bad_name');
+  const named = validateProfile({ name: ' Mo ' });
+  assert.deepEqual(named.ok && named.patch, { name: 'Mo' });
 });
 
 // ---------- the agent knows the settings, estimates by itself ----------
@@ -45,7 +49,7 @@ function chatSetup(replies: unknown[], store = new MemoryStore()) {
 
 test('the saved settings reach the agent as known facts, and it is told not to ask for them', async () => {
   const store = new MemoryStore();
-  store.profile = { wake: '07:00', sleep: '23:30', apps: ['Instagram', 'TikTok'], focus: 'my thesis' };
+  store.profile = { wake: '07:00', sleep: '23:30', apps: ['Instagram', 'TikTok'], focus: 'my thesis', name: 'Mo' };
   const { net, run } = chatSetup([textReply('ok')], store);
   await run(base);
   const system = net.museRequests[0].messages[0].content!;
@@ -53,6 +57,8 @@ test('the saved settings reach the agent as known facts, and it is told not to a
   assert.match(system, /known_sleep: 23:30/);
   assert.match(system, /known_distracting_apps: \["Instagram","TikTok"\]/);
   assert.match(system, /known_focus: "my thesis"/);
+  assert.match(system, /known_first_name: "Mo"/);
+  assert.match(system, /You are Lify/);
   assert.match(system, /Never ask for them again/);
   assert.match(system, /do not ask for them/);
 });

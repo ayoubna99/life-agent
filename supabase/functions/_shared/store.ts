@@ -224,17 +224,19 @@ export class RestStore implements Store {
   }
 
   async getProfile(): Promise<Profile> {
-    const rows = (await this.rest('profile', 'profiles?select=wake_minute,sleep_minute,distracting_apps,focus&limit=1')) as {
+    const rows = (await this.rest('profile', 'profiles?select=wake_minute,sleep_minute,distracting_apps,focus,first_name&limit=1')) as {
       wake_minute: number | null;
       sleep_minute: number | null;
       distracting_apps: string[] | null;
       focus: string | null;
+      first_name: string | null;
     }[];
     const r = rows[0];
     const profile: Profile = { apps: r?.distracting_apps ?? [] };
     if (typeof r?.wake_minute === 'number') profile.wake = toHHMM(r.wake_minute);
     if (typeof r?.sleep_minute === 'number') profile.sleep = toHHMM(r.sleep_minute);
     if (r?.focus) profile.focus = r.focus;
+    if (r?.first_name) profile.name = r.first_name;
     return profile;
   }
 
@@ -244,6 +246,7 @@ export class RestStore implements Store {
     if (patch.sleep !== undefined) row.sleep_minute = toMinutes(patch.sleep);
     if (patch.apps !== undefined) row.distracting_apps = patch.apps;
     if (patch.focus !== undefined) row.focus = patch.focus;
+    if (patch.name !== undefined) row.first_name = patch.name;
     await this.rest('profile', 'profiles?on_conflict=user_id', {
       method: 'POST',
       json: row,

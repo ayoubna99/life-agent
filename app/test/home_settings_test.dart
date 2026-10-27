@@ -129,14 +129,32 @@ void main() {
       );
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
-      expect(find.text('Study German'), findsOneWidget);
-      expect(find.text('19:00 · 40 min'), findsOneWidget);
+      expect(find.byKey(const Key('task-Study German')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('task-Study German')),
+          matching: find.text('19:00 · 40 min'),
+        ),
+        findsOneWidget,
+      );
+      await t.ensureVisible(find.byKey(const Key('task-Study German')));
+      await t.pump();
       await t.tap(find.byKey(const Key('task-Study German')));
       await t.pumpAndSettle();
-      expect(find.text('First step: Open the sheet'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('task-Study German')),
+          matching: find.text('First step: Open the sheet'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('• Read page 1'), findsOneWidget);
+      await t.ensureVisible(find.text('Open material'));
+      await t.pump();
       await t.tap(find.text('Open material'));
       expect(env.opener.opened.single, 'https://x/a.pdf');
+      await t.ensureVisible(find.byKey(const Key('check-Study German')));
+      await t.pump();
       await t.tap(find.byKey(const Key('check-Study German')));
       await t.pumpAndSettle();
       expect((await env.tasks.forDate('2026-10-27')).single.done, isTrue);
@@ -221,12 +239,21 @@ void main() {
       );
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
-      expect(find.text('Next: Study German'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('next')),
+          matching: find.text('Study German'),
+        ),
+        findsOneWidget,
+      );
       expect(find.textContaining('First step: Open the sheet'), findsWidgets);
       await t.tap(find.byKey(const Key('next-done')));
       await t.pumpAndSettle();
       expect(
-        find.text('Next: Gym'),
+        find.descendant(
+          of: find.byKey(const Key('next')),
+          matching: find.text('Gym'),
+        ),
         findsOneWidget,
         reason: 'the next one moves up',
       );
@@ -256,6 +283,7 @@ void main() {
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('test-next')));
+      await t.pump();
       await t.tap(find.byKey(const Key('test-next')));
       await t.pump(const Duration(milliseconds: 200));
       await t.pump(const Duration(milliseconds: 200));
@@ -289,6 +317,7 @@ void main() {
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('test-next')));
+      await t.pump();
       await t.tap(find.byKey(const Key('test-next')));
       await t.pump();
       expect(env.native.alarms.single.$3, startsWith('Test reminder'));
@@ -312,6 +341,7 @@ void main() {
       );
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('test-next')));
+      await t.pump();
       await t.tap(find.byKey(const Key('test-next')));
       await t.pump();
       expect(find.textContaining('Alarms and reminders'), findsOneWidget);
@@ -322,12 +352,16 @@ void main() {
   testWidgets('"Nudge card (test)" asks for the card on top of other apps', (
     t,
   ) async {
+    t.view.physicalSize = const Size(900, 3200);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
     final env = Env(
       profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
     );
     await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
     await t.pumpAndSettle();
     await t.ensureVisible(find.byKey(const Key('test-card')));
+    await t.pump();
     await t.tap(find.byKey(const Key('test-card')));
     await t.pump(const Duration(milliseconds: 100));
     await t.pump(const Duration(milliseconds: 100));
@@ -388,7 +422,7 @@ void main() {
       );
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
-      expect(find.text('Gym'), findsOneWidget);
+      expect(find.byKey(const Key('task-Gym')), findsOneWidget);
       expect(find.textContaining('Offline'), findsOneWidget);
     },
   );
@@ -403,6 +437,7 @@ void main() {
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('start')));
+      await t.pump();
       await t.tap(find.byKey(const Key('start')));
       await t.pumpAndSettle();
       expect(find.byType(ChatPage), findsOneWidget);
@@ -425,6 +460,7 @@ void main() {
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('plan')));
+      await t.pump();
       await t.tap(find.byKey(const Key('plan')));
       await t.pumpAndSettle();
       await t.enterText(find.byKey(const Key('input')), 'Plan my day');
@@ -443,6 +479,9 @@ void main() {
   testWidgets(
     '"Review my day" tells the agent which tasks were done and which were missed',
     (t) async {
+      t.view.physicalSize = const Size(900, 3200);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
       final env = Env(
         profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
       );
@@ -461,6 +500,7 @@ void main() {
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('review')));
+      await t.pump();
       await t.tap(find.byKey(const Key('review')));
       await t.pumpAndSettle();
       final chat = env.server.agentCalls
@@ -507,6 +547,7 @@ void main() {
       await t.pumpAndSettle();
       await t.enterText(find.byKey(const Key('focus')), 'my thesis');
       await t.ensureVisible(find.byKey(const Key('save')));
+      await t.pump();
       await t.tap(find.byKey(const Key('save')));
       await t.pumpAndSettle();
       expect(env.saved, {
@@ -537,6 +578,7 @@ void main() {
       expect(find.text('22:45'), findsOneWidget);
       expect(find.text('TikTok'), findsOneWidget);
       await t.ensureVisible(find.byKey(const Key('save')));
+      await t.pump();
       await t.tap(find.byKey(const Key('save')));
       await t.pumpAndSettle();
       expect(find.byKey(const Key('error')), findsOneWidget);
@@ -565,6 +607,7 @@ void main() {
       );
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('perm-usage')));
+      await t.pump();
       expect(
         find.descendant(
           of: find.byKey(const Key('perm-alarms')),
@@ -647,6 +690,8 @@ void main() {
       expect(env.voiceSettings.value.voiceName, isNull);
 
       await t.ensureVisible(find.byKey(const Key('voice-sample')));
+
+      await t.pump();
       await t.tap(find.byKey(const Key('voice-sample')));
       expect(
         env.speaker.spoken.length,

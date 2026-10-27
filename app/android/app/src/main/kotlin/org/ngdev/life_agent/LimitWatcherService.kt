@@ -46,7 +46,7 @@ class LimitWatcherService : Service() {
             return START_NOT_STICKY
         }
         val note = Nudger.builder(this, Nudger.CHANNEL_WATCHER)
-            .setSmallIcon(applicationInfo.icon)
+            .setSmallIcon(Nudger.smallIcon(this))
             .setContentTitle("Life is watching your limits")
             .setContentIntent(Nudger.openAppIntent(this))
             .setOngoing(true)

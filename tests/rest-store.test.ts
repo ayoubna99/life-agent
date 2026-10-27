@@ -95,14 +95,16 @@ test('a failing call is a StoreError with the status only', async () => {
 });
 
 test('settings are read as times and saved only for the fields sent', async () => {
-  const { s, seen } = store(() => json([{ wake_minute: 420, sleep_minute: 1410, distracting_apps: ['Instagram'], focus: 'my thesis' }]));
-  assert.deepEqual(await s.getProfile(), { wake: '07:00', sleep: '23:30', apps: ['Instagram'], focus: 'my thesis' });
+  const { s, seen } = store(() => json([{ wake_minute: 420, sleep_minute: 1410, distracting_apps: ['Instagram'], focus: 'my thesis', first_name: 'Mo' }]));
+  assert.deepEqual(await s.getProfile(), { wake: '07:00', sleep: '23:30', apps: ['Instagram'], focus: 'my thesis', name: 'Mo' });
   await s.saveProfile({ sleep: '22:45' });
   assert.match(seen[1].url, /profiles\?on_conflict=user_id$/);
   assert.equal(seen[1].headers.Prefer, 'resolution=merge-duplicates,return=minimal');
   assert.deepEqual(seen[1].body, { user_id: USER, sleep_minute: 1365 });
   await s.saveProfile({ apps: ['TikTok'], focus: '' });
   assert.deepEqual(seen[2].body, { user_id: USER, distracting_apps: ['TikTok'], focus: '' });
+  await s.saveProfile({ name: 'Mo' });
+  assert.deepEqual(seen[3].body, { user_id: USER, first_name: 'Mo' });
   const { s: empty } = store(() => json([]));
   assert.deepEqual(await empty.getProfile(), { apps: [] });
 });

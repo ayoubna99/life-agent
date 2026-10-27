@@ -30,6 +30,10 @@ class Nudger(context: Context) {
         const val CHANNEL_WATCHER = "watcher"
         private var overlay: View? = null
 
+        /** The small white sunrise for the status bar (falls back to the app icon if it is missing). */
+        fun smallIcon(context: Context): Int =
+            context.resources.getIdentifier("ic_stat_life", "drawable", context.packageName).takeIf { it != 0 } ?: context.applicationInfo.icon
+
         fun ensureChannels(context: Context) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -56,7 +60,7 @@ class Nudger(context: Context) {
     fun notify(text: String, id: Int, channel: String) {
         ensureChannels(ctx)
         val n = builder(ctx, channel)
-            .setSmallIcon(ctx.applicationInfo.icon)
+            .setSmallIcon(smallIcon(ctx))
             .setContentTitle("Life")
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
@@ -76,10 +80,10 @@ class Nudger(context: Context) {
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(14), dp(18), dp(10))
-            background = GradientDrawable().apply { setColor(0xFF1F2A27.toInt()); cornerRadius = dp(18).toFloat() }
+            background = GradientDrawable().apply { setColor(0xFF2B2240.toInt()); cornerRadius = dp(18).toFloat() }
             elevation = dp(8).toFloat()
         }
-        card.addView(TextView(ctx).apply { this.text = "Life"; setTextColor(0xFF9FD3C4.toInt()); textSize = 12f })
+        card.addView(TextView(ctx).apply { this.text = "Life"; setTextColor(0xFFFF7452.toInt()); textSize = 12f })
         card.addView(TextView(ctx).apply { this.text = text; setTextColor(0xFFFFFFFF.toInt()); textSize = 16f; setPadding(0, dp(4), 0, dp(8)) })
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
         fun close() { runCatching { wm.removeView(card) }; if (overlay === card) overlay = null }

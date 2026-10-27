@@ -64,8 +64,9 @@ Send **summaries**, never the raw event log.
 `{"action":"plan","date":"2026-10-27"}` -> `{"plan":{"date":"...","status":"ready","data":{"tasks":[...],"limits":[...]}}}` or `{"plan":null}`.
 
 ## action: "profile"  (settings asked in the app, not in the chat)
-`{"action":"profile","set":{"wake":"07:00","sleep":"23:30","apps":["Instagram","TikTok"],"focus":"my thesis"}}`
-Only the fields sent are saved. Without `set` it just reads. Answer: `{"profile":{"wake":"07:00","sleep":"23:30","apps":[...],"focus":"..."}}`.
+`{"action":"profile","set":{"wake":"07:00","sleep":"23:30","apps":["Instagram","TikTok"],"focus":"my thesis","name":"Mo"}}`
+`name` is the first name from onboarding (at most 40 characters).
+Only the fields sent are saved. Without `set` it just reads. Answer: `{"profile":{"wake":"07:00","sleep":"23:30","apps":[...],"focus":"...","name":"Mo"}}`.
 The agent receives these as known facts and never asks for them.
 
 ## action: "attach"  (a PDF, a photo or a text file the user sends)

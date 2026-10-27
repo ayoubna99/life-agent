@@ -5,6 +5,7 @@ export interface Profile {
   sleep?: string; // HH:MM
   apps: string[]; // the apps that pull them off track
   focus?: string; // what they most want to spend time on
+  name?: string; // first name, so Lify can greet them
 }
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -40,6 +41,10 @@ export function validateProfile(raw: unknown): { ok: true; patch: Partial<Profil
   if (p.focus !== undefined) {
     if (typeof p.focus !== 'string' || p.focus.length > 200) return { ok: false, error: 'bad_focus' };
     patch.focus = p.focus.trim();
+  }
+  if (p.name !== undefined) {
+    if (typeof p.name !== 'string' || p.name.trim().length > 40) return { ok: false, error: 'bad_name' };
+    patch.name = p.name.trim();
   }
   if (Object.keys(patch).length === 0) return { ok: false, error: 'bad_profile' };
   return { ok: true, patch };

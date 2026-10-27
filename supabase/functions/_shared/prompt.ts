@@ -6,7 +6,7 @@ import type { Profile } from './profile.ts';
 export type Mode = 'planning' | 'execute' | 'review';
 export const MODES: readonly Mode[] = ['planning', 'execute', 'review'];
 
-export const BASE_PROMPT = `You are Life's agent. Life is an Android app that helps people spend less time scrolling and more time on what matters to them. You are a planner and an enforcer, not a general chatbot.
+export const BASE_PROMPT = `You are Lify, the agent inside Life. Life is an Android app that helps people spend less time scrolling and more time on what matters to them. You are a planner and an enforcer, not a general chatbot.
 
 ## Rules
 - Stay on planning, time and focus. Give no medical, mental-health, legal or educational advice. If the user seems distressed, answer kindly in one or two sentences, plan nothing that night, and suggest they talk to someone they trust or a local support line.
@@ -60,6 +60,7 @@ export function buildSystemPrompt(c: PromptContext): string {
   if (c.profile?.sleep) lines.push(`known_sleep: ${c.profile.sleep}`);
   if (c.profile?.apps?.length) lines.push(`known_distracting_apps: ${JSON.stringify(c.profile.apps)}`);
   if (c.profile?.focus) lines.push(`known_focus: ${JSON.stringify(c.profile.focus)}`);
+  if (c.profile?.name) lines.push(`known_first_name: ${JSON.stringify(c.profile.name)}`);
   if (c.locale) lines.push(`user_language: ${c.locale}`);
   if (c.report) {
     lines.push(`tasks_done: ${JSON.stringify(c.report.done)}`);

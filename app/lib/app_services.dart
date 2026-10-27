@@ -11,6 +11,7 @@ import 'config.dart';
 import 'device/device_runner.dart';
 import 'device/next_task.dart';
 import 'device/stores.dart';
+import 'onboarding/onboarding_store.dart';
 import 'platform/native.dart';
 import 'platform/services.dart';
 import 'platform/voice_settings.dart';
@@ -29,11 +30,13 @@ class AppServices {
     required this.voiceSettings,
     this.languageCode = 'en',
     AlarmLog? alarmLog,
+    OnboardingStore? onboarding,
     this.baseUrl = AppConfig.supabaseUrl,
     this.apiKey = AppConfig.supabaseKey,
     DateTime Function()? now,
   }) : now = now ?? DateTime.now,
-       alarmLog = alarmLog ?? MemoryAlarmLog();
+       alarmLog = alarmLog ?? MemoryAlarmLog(),
+       onboarding = onboarding ?? MemoryOnboardingStore(isDone: true);
 
   factory AppServices.real() {
     final client = http.Client();
@@ -65,6 +68,7 @@ class AppServices {
       voiceSettings: voiceSettings,
       languageCode: languageCode,
       alarmLog: PrefsAlarmLog(),
+      onboarding: PrefsOnboardingStore(),
     );
   }
 
@@ -79,6 +83,7 @@ class AppServices {
   final VoiceSettingsStore voiceSettings;
   final String languageCode;
   final AlarmLog alarmLog;
+  final OnboardingStore onboarding;
   final String baseUrl;
   final String apiKey;
   final DateTime Function() now;

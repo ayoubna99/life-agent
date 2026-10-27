@@ -37,10 +37,18 @@ The APK is `build/app/outputs/flutter-apk/app-release.apk`. A build without the 
 4. A small notification says Life is watching your limits. When a limited app is open and the limit is near, reached or passed, the agent writes a short message and shows it on top of the app.
 5. **Review my day** in the evening compares the plan with what really happened and adapts tomorrow.
 
+## Look
+
+Colours come from the icon: coral `#FF7452` on cream `#FBF5EF`, peach `#FFC9B3`, deep dusk violet `#2B2240` for night and dark mode, ink `#2A211C` for text (`lib/ui/theme.dart`).
+The icon is a sunrise (coral arc over a coral horizon on cream): a vector (`android/app/src/main/res/drawable/ic_launcher_foreground.xml`, background in `values/colors.xml`,
+a one-colour version for Android 13 themed icons) and the small status-bar icon `ic_stat_life.xml`. `assets/branding/life-icon.svg` and `life-icon-1024.png` are the same drawing for GitHub, X and the demo.
+Pictures (made with Muse Image, shrunk to WebP, 3 to 9 KB each) are in `assets/images/`: the home header, the night card ("Tomorrow is planned. Rest now."),
+the morning card ("Your plan for today is ready"), the empty list and the chat welcome. On start a sunrise animation plays for 1.5 s (tap to skip; skipped when the phone has animations turned off).
+
 ## Tests
 
 ```
-flutter test                      # 101 tests: client, chat loop, device tools, chat, voice, files, home, settings
+flutter test                      # 106 tests: client, chat loop, device tools, chat, voice, files, home, settings
 cd android && ./gradlew testDebugUnitTest   # 29 Kotlin tests: usage maths, nudge rules, app-name matching
 ```
 
