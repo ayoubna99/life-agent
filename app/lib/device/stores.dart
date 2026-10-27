@@ -73,11 +73,36 @@ abstract class TaskStore {
   Future<LocalTask> upsert(LocalTask task);
 
   Future<void> setDone(String id, bool done);
+
+  Future<void> remove(String id);
 }
 
 abstract class LimitStore {
   Future<Map<String, int>> all();
   Future<void> set(String app, int minutesPerDay);
+  Future<void> remove(String app);
+}
+
+/// The reminders scheduled for each day, so a new plan can cancel the ones it no longer has.
+abstract class AlarmLog {
+  Future<List<String>> ids(String date);
+  Future<void> add(String date, String id);
+  Future<void> remove(String date, String id);
+}
+
+class MemoryAlarmLog implements AlarmLog {
+  final Map<String, Set<String>> _byDate = {};
+
+  @override
+  Future<List<String>> ids(String date) async => [...?_byDate[date]];
+
+  @override
+  Future<void> add(String date, String id) async =>
+      (_byDate[date] ??= {}).add(id);
+
+  @override
+  Future<void> remove(String date, String id) async =>
+      _byDate[date]?.remove(id);
 }
 
 class MemoryTaskStore implements TaskStore {
@@ -110,6 +135,9 @@ class MemoryTaskStore implements TaskStore {
     final i = _tasks.indexWhere((t) => t.id == id);
     if (i >= 0) _tasks[i] = _tasks[i].copyWith(done: done);
   }
+
+  @override
+  Future<void> remove(String id) async => _tasks.removeWhere((t) => t.id == id);
 }
 
 class MemoryLimitStore implements LimitStore {
@@ -121,6 +149,9 @@ class MemoryLimitStore implements LimitStore {
   @override
   Future<void> set(String app, int minutesPerDay) async =>
       _limits[app] = minutesPerDay;
+
+  @override
+  Future<void> remove(String app) async => _limits.remove(app);
 }
 
 /// The same stores on the phone (shared_preferences, a small JSON blob). Tasks older than two weeks are dropped when saving.
@@ -192,6 +223,13 @@ class PrefsTaskStore implements TaskStore {
     all[i] = all[i].copyWith(done: done);
     await _save(all);
   }
+
+  @override
+  Future<void> remove(String id) async {
+    final all = await _load();
+    all.removeWhere((t) => t.id == id);
+    await _save(all);
+  }
 }
 
 class PrefsLimitStore implements LimitStore {
@@ -219,5 +257,62 @@ class PrefsLimitStore implements LimitStore {
       _key,
       jsonEncode(all),
     );
+  }
+
+  @override
+  Future<void> remove(String app) async {
+    final all = await this.all();
+    if (all.remove(app) == null) return;
+    await (await SharedPreferences.getInstance()).setString(
+      _key,
+      jsonEncode(all),
+    );
+  }
+}
+
+/// Reminder ids per day on the phone (days older than a week are forgotten).
+class PrefsAlarmLog implements AlarmLog {
+  static const _key = 'life.alarms';
+
+  Future<Map<String, List<String>>> _load() async {
+    final raw = (await SharedPreferences.getInstance()).getString(_key);
+    if (raw == null) return {};
+    try {
+      return {
+        for (final e in (jsonDecode(raw) as Map).entries)
+          e.key as String: [for (final v in e.value as List) v as String],
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> _save(Map<String, List<String>> all) async {
+    final days = all.keys.toList()..sort();
+    for (final old in days.take((days.length - 7).clamp(0, days.length))) {
+      all.remove(old);
+    }
+    await (await SharedPreferences.getInstance()).setString(
+      _key,
+      jsonEncode(all),
+    );
+  }
+
+  @override
+  Future<List<String>> ids(String date) async => (await _load())[date] ?? [];
+
+  @override
+  Future<void> add(String date, String id) async {
+    final all = await _load();
+    final list = all[date] ??= [];
+    if (!list.contains(id)) list.add(id);
+    await _save(all);
+  }
+
+  @override
+  Future<void> remove(String date, String id) async {
+    final all = await _load();
+    all[date]?.remove(id);
+    await _save(all);
   }
 }

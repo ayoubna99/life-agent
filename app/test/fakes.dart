@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:life_agent/agent/models.dart';
 import 'package:life_agent/platform/native.dart';
 import 'package:life_agent/platform/services.dart';
+import 'package:life_agent/platform/voice_settings.dart';
 
 class FakePicks implements FilePicks {
   PickedFile? document;
@@ -32,6 +33,14 @@ class FakeVoice implements VoiceRecorder {
 
 class FakeSpeaker implements Speaker {
   final List<String> spoken = [];
+  List<SpeechVoice> installed = const [
+    SpeechVoice(name: 'en-us-x-tpd-network', locale: 'en-US'),
+    SpeechVoice(name: 'en-us-x-iom-local', locale: 'en-US'),
+    SpeechVoice(name: 'fr-fr-x-vlf-local', locale: 'fr-FR'),
+  ];
+
+  @override
+  Future<List<SpeechVoice>> voices() async => installed;
 
   @override
   Future<void> speak(String text) async => spoken.add(text);
@@ -92,6 +101,11 @@ class FakeNative implements Native {
     alarms.add((id, atMillis, message));
     return true;
   }
+
+  final List<String> cancelled = [];
+
+  @override
+  Future<void> cancelAlarm(String id) async => cancelled.add(id);
 
   @override
   Future<List<String>> applyLimits(Map<String, int> limits) async {

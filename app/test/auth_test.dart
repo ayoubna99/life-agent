@@ -6,19 +6,22 @@ import 'package:life_agent/agent/models.dart';
 import 'helpers.dart';
 
 void main() {
-  test('the first call signs in anonymously with the publishable key, and the token is reused', () async {
-    final server = FakeServer((r) => jsonResponse(tokenBody()));
-    final auth = newAuth(server.client);
-    final a = await auth.ensure();
-    final b = await auth.ensure();
-    expect(a.accessToken, 'access-1');
-    expect(a.userId, userId);
-    expect(b.accessToken, 'access-1');
-    expect(server.requests, hasLength(1));
-    expect(server.requests.single.path, '/auth/v1/signup');
-    expect(server.requests.single.headers['apikey'], key);
-    expect(server.requests.single.json, isEmpty);
-  });
+  test(
+    'the first call signs in anonymously with the publishable key, and the token is reused',
+    () async {
+      final server = FakeServer((r) => jsonResponse(tokenBody()));
+      final auth = newAuth(server.client);
+      final a = await auth.ensure();
+      final b = await auth.ensure();
+      expect(a.accessToken, 'access-1');
+      expect(a.userId, userId);
+      expect(b.accessToken, 'access-1');
+      expect(server.requests, hasLength(1));
+      expect(server.requests.single.path, '/auth/v1/signup');
+      expect(server.requests.single.headers['apikey'], key);
+      expect(server.requests.single.json, isEmpty);
+    },
+  );
 
   test(
     'a stored session survives an app restart without any network call',
@@ -33,26 +36,29 @@ void main() {
     },
   );
 
-  test('a token about to expire is refreshed with the refresh token and the same user stays', () async {
-    var clock = DateTime(2026, 10, 27, 9);
-    final server = FakeServer(
-      (r) => r.path.contains('refresh_token')
-          ? jsonResponse(tokenBody(access: 'access-2', refresh: 'refresh-2'))
-          : jsonResponse(tokenBody(expiresIn: 3600)),
-    );
-    final auth = newAuth(server.client, now: () => clock);
-    await auth.ensure();
-    clock = clock.add(
-      const Duration(minutes: 59, seconds: 30),
-    ); // less than a minute left
-    final s = await auth.ensure();
-    expect(s.accessToken, 'access-2');
-    expect(
-      server.requests.last.path,
-      '/auth/v1/token?grant_type=refresh_token',
-    );
-    expect(server.requests.last.json, {'refresh_token': 'refresh-1'});
-  });
+  test(
+    'a token about to expire is refreshed with the refresh token and the same user stays',
+    () async {
+      var clock = DateTime(2026, 10, 27, 9);
+      final server = FakeServer(
+        (r) => r.path.contains('refresh_token')
+            ? jsonResponse(tokenBody(access: 'access-2', refresh: 'refresh-2'))
+            : jsonResponse(tokenBody(expiresIn: 3600)),
+      );
+      final auth = newAuth(server.client, now: () => clock);
+      await auth.ensure();
+      clock = clock.add(
+        const Duration(minutes: 59, seconds: 30),
+      ); // less than a minute left
+      final s = await auth.ensure();
+      expect(s.accessToken, 'access-2');
+      expect(
+        server.requests.last.path,
+        '/auth/v1/token?grant_type=refresh_token',
+      );
+      expect(server.requests.last.json, {'refresh_token': 'refresh-1'});
+    },
+  );
 
   test(
     'if the refresh token is no longer valid a new anonymous user is created',

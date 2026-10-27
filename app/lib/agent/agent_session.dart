@@ -53,6 +53,7 @@ class AgentSession {
   final String locale;
   final Map<String, List<String>>? report;
   String? conversationId;
+  bool _began = false;
 
   /// Lets the screen say "Setting a 30 minute limit for Instagram..." while the tools run.
   final void Function(ToolCall call)? onToolStart;
@@ -70,6 +71,10 @@ class AgentSession {
     var planSaved = false;
     final artifacts = <Artifact>[];
     final run = <ToolRun>[];
+    if (mode == 'execute' && !_began) {
+      _began = true;
+      await tools.beginRun();
+    }
     for (var round = 0; round <= maxToolRounds; round++) {
       final answer = await api.chat(
         mode: mode,
@@ -84,6 +89,7 @@ class AgentSession {
       planSaved = planSaved || answer.planSaved;
       artifacts.addAll(answer.artifacts);
       if (!answer.wantsTools) {
+        if (mode == 'execute') await tools.endRun();
         return AgentReply(
           text: answer.text ?? '',
           planSaved: planSaved,

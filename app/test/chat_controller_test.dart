@@ -5,6 +5,7 @@ import 'package:life_agent/agent/agent_session.dart';
 import 'package:life_agent/agent/models.dart';
 import 'package:life_agent/chat/chat_controller.dart';
 import 'package:life_agent/chat/messages.dart';
+import 'package:life_agent/platform/voice_settings.dart';
 import 'package:life_agent/platform/native.dart';
 import 'package:life_agent/platform/services.dart';
 
@@ -58,54 +59,67 @@ FakeServer answering(
   );
 }
 
+const stored =
+    'https://x.supabase.co/storage/v1/object/sign/materials/u/a.pdf?token=eyJraWQiOiI2ZWM2NDc4OS01MDAzLTRkZmYtOTVlNi1jYjUxMzI0NWRkZGIi.long';
+
 void main() {
-  test('a message goes out, the answer comes back, and the screen shows "thinking" in between', () async {
-    final rig = Rig(
-      answering([
-        text('What do you want to do tomorrow?'),
-      ], other: (_) => {'saved': 1}),
-    );
-    final seen = <String?>[];
-    rig.controller.addListener(() => seen.add(rig.controller.status));
-    await rig.controller.send('Plan my day');
-    expect(rig.controller.messages.map((m) => (m.who, m.text)), [
-      (Who.user, 'Plan my day'),
-      (Who.agent, 'What do you want to do tomorrow?'),
-    ]);
-    expect(seen, contains('Thinking…'));
-    expect(rig.controller.busy, isFalse);
-    expect(rig.controller.status, isNull);
-  });
+  test(
+    'a message goes out, the answer comes back, and the screen only shows a spinner while it waits (no "thinking" text)',
+    () async {
+      final rig = Rig(
+        answering([
+          text('What do you want to do tomorrow?'),
+        ], other: (_) => {'saved': 1}),
+      );
+      final seen = <String?>[];
+      rig.controller.addListener(() => seen.add(rig.controller.status));
+      await rig.controller.send('Plan my day');
+      expect(rig.controller.messages.map((m) => (m.who, m.text)), [
+        (Who.user, 'Plan my day'),
+        (Who.agent, 'What do you want to do tomorrow?'),
+      ]);
+      expect(seen, isNot(contains('Thinking…')));
+      expect(rig.controller.busy, isFalse);
+      expect(rig.controller.busy, isFalse);
+      expect(rig.controller.status, isNull);
+    },
+  );
 
-  test('real screen time is sent once before the first message, not before every one', () async {
-    final rig = Rig(
-      answering([text('a'), text('b')], other: (_) => {'saved': 1}),
-    );
-    await rig.controller.send('one');
-    await rig.controller.send('two');
-    final usageCalls = rig.server.agentCalls
-        .where((c) => c.json['action'] == 'usage')
-        .toList();
-    expect(usageCalls, hasLength(1));
-    expect((usageCalls.single.json['days'] as List).single, {
-      'day': '2026-10-27',
-      'app': 'TikTok',
-      'minutes': 70,
-    });
-  });
+  test(
+    'real screen time is sent once before the first message, not before every one',
+    () async {
+      final rig = Rig(
+        answering([text('a'), text('b')], other: (_) => {'saved': 1}),
+      );
+      await rig.controller.send('one');
+      await rig.controller.send('two');
+      final usageCalls = rig.server.agentCalls
+          .where((c) => c.json['action'] == 'usage')
+          .toList();
+      expect(usageCalls, hasLength(1));
+      expect((usageCalls.single.json['days'] as List).single, {
+        'day': '2026-10-27',
+        'app': 'TikTok',
+        'minutes': 70,
+      });
+    },
+  );
 
-  test('without Usage access the chat still works and the person is told what to turn on', () async {
-    final rig = Rig(answering([text('ok')]));
-    rig.native.usageAccess = false;
-    await rig.controller.send('hi');
-    expect(
-      rig.server.agentCalls.where((c) => c.json['action'] == 'usage'),
-      isEmpty,
-    );
-    final note = rig.controller.messages.firstWhere((m) => m.who == Who.note);
-    expect(note.text, contains('Usage access'));
-    expect(rig.controller.messages.last.text, 'ok');
-  });
+  test(
+    'without Usage access the chat still works and the person is told what to turn on',
+    () async {
+      final rig = Rig(answering([text('ok')]));
+      rig.native.usageAccess = false;
+      await rig.controller.send('hi');
+      expect(
+        rig.server.agentCalls.where((c) => c.json['action'] == 'usage'),
+        isEmpty,
+      );
+      final note = rig.controller.messages.firstWhere((m) => m.who == Who.note);
+      expect(note.text, contains('Usage access'));
+      expect(rig.controller.messages.last.text, 'ok');
+    },
+  );
 
   test('the morning run does not read screen time at all', () async {
     final rig = Rig(answering([text('done')]), mode: 'execute');
@@ -116,27 +130,30 @@ void main() {
     );
   });
 
-  test('errors become plain sentences in the chat, and the chat keeps working afterwards', () async {
-    var n = 0;
-    final server = FakeServer((r) {
-      if (r.path.startsWith('/auth/')) return jsonResponse(tokenBody());
-      if (r.action == 'usage') return jsonResponse({'saved': 1});
-      return ++n == 1
-          ? jsonResponse({
-              'error': {'code': 'demo_at_capacity'},
-            }, 429)
-          : jsonResponse(text('back again'));
-    });
-    final rig = Rig(server);
-    await rig.controller.send('hi');
-    final err = rig.controller.messages.last;
-    expect(err.who, Who.note);
-    expect(err.error, isTrue);
-    expect(err.text, contains('demo is full'));
-    expect(err.text, isNot(contains('demo_at_capacity')));
-    await rig.controller.send('hi again');
-    expect(rig.controller.messages.last.text, 'back again');
-  });
+  test(
+    'errors become plain sentences in the chat, and the chat keeps working afterwards',
+    () async {
+      var n = 0;
+      final server = FakeServer((r) {
+        if (r.path.startsWith('/auth/')) return jsonResponse(tokenBody());
+        if (r.action == 'usage') return jsonResponse({'saved': 1});
+        return ++n == 1
+            ? jsonResponse({
+                'error': {'code': 'demo_at_capacity'},
+              }, 429)
+            : jsonResponse(text('back again'));
+      });
+      final rig = Rig(server);
+      await rig.controller.send('hi');
+      final err = rig.controller.messages.last;
+      expect(err.who, Who.note);
+      expect(err.error, isTrue);
+      expect(err.text, contains('demo is full'));
+      expect(err.text, isNot(contains('demo_at_capacity')));
+      await rig.controller.send('hi again');
+      expect(rig.controller.messages.last.text, 'back again');
+    },
+  );
 
   test(
     'an empty message is not sent, and a second message while busy is ignored',
@@ -249,31 +266,34 @@ void main() {
     },
   );
 
-  test('voice: tap to listen, tap to send; the words become a message and the answer is read aloud', () async {
-    final server = answering(
-      [text('Sure, what time?')],
-      other: (req) => req.action == 'transcribe'
-          ? {'text': 'Study German tomorrow', 'duration_ms': 2000}
-          : {'saved': 1},
-    );
-    final rig = Rig(server);
-    await rig.controller.toggleVoice();
-    expect(rig.controller.recording, isTrue);
-    expect(rig.voice.started, isTrue);
-    expect(rig.controller.status, contains('Listening'));
-    await rig.controller.toggleVoice();
-    expect(rig.controller.recording, isFalse);
-    expect(rig.controller.messages.map((m) => m.text), [
-      'Study German tomorrow',
-      'Sure, what time?',
-    ]);
-    expect(rig.speaker.spoken, ['Sure, what time?']);
-    final t = rig.server.agentCalls
-        .firstWhere((c) => c.json['action'] == 'transcribe')
-        .json;
-    expect(t['keywords'], ['TikTok']);
-    expect(t['languages'], ['English']);
-  });
+  test(
+    'voice: tap to listen, tap to send; the words become a message and the answer is read aloud',
+    () async {
+      final server = answering(
+        [text('Sure, what time?')],
+        other: (req) => req.action == 'transcribe'
+            ? {'text': 'Study German tomorrow', 'duration_ms': 2000}
+            : {'saved': 1},
+      );
+      final rig = Rig(server);
+      await rig.controller.toggleVoice();
+      expect(rig.controller.recording, isTrue);
+      expect(rig.voice.started, isTrue);
+      expect(rig.controller.status, contains('Listening'));
+      await rig.controller.toggleVoice();
+      expect(rig.controller.recording, isFalse);
+      expect(rig.controller.messages.map((m) => m.text), [
+        'Study German tomorrow',
+        'Sure, what time?',
+      ]);
+      expect(rig.speaker.spoken, ['Sure, what time?']);
+      final t = rig.server.agentCalls
+          .firstWhere((c) => c.json['action'] == 'transcribe')
+          .json;
+      expect(t['keywords'], ['TikTok']);
+      expect(t['languages'], ['English']);
+    },
+  );
 
   test('typed messages are not read aloud', () async {
     final rig = Rig(
@@ -283,35 +303,38 @@ void main() {
     expect(rig.speaker.spoken, isEmpty);
   });
 
-  test('voice problems: no microphone permission, silence, and a failed transcript are each explained', () async {
-    final denied = Rig(answering([]));
-    denied.voice.allowed = false;
-    await denied.controller.toggleVoice();
-    expect(denied.controller.recording, isFalse);
-    expect(denied.controller.messages.last.text, contains('microphone'));
+  test(
+    'voice problems: no microphone permission, silence, and a failed transcript are each explained',
+    () async {
+      final denied = Rig(answering([]));
+      denied.voice.allowed = false;
+      await denied.controller.toggleVoice();
+      expect(denied.controller.recording, isFalse);
+      expect(denied.controller.messages.last.text, contains('microphone'));
 
-    final silent = Rig(answering([]));
-    silent.voice.recording = null;
-    await silent.controller.toggleVoice();
-    await silent.controller.toggleVoice();
-    expect(silent.controller.messages.last.text, contains('did not hear'));
+      final silent = Rig(answering([]));
+      silent.voice.recording = null;
+      await silent.controller.toggleVoice();
+      await silent.controller.toggleVoice();
+      expect(silent.controller.messages.last.text, contains('did not hear'));
 
-    final noSpeech = Rig(
-      FakeServer(
-        (r) => r.path.startsWith('/auth/')
-            ? jsonResponse(tokenBody())
-            : r.path.startsWith('/storage/')
-            ? jsonResponse({})
-            : jsonResponse({
-                'error': {'code': 'no_speech'},
-              }, 422),
-      ),
-    );
-    await noSpeech.controller.toggleVoice();
-    await noSpeech.controller.toggleVoice();
-    expect(noSpeech.controller.messages.last.text, contains('did not hear'));
-    expect(noSpeech.controller.busy, isFalse);
-  });
+      final noSpeech = Rig(
+        FakeServer(
+          (r) => r.path.startsWith('/auth/')
+              ? jsonResponse(tokenBody())
+              : r.path.startsWith('/storage/')
+              ? jsonResponse({})
+              : jsonResponse({
+                  'error': {'code': 'no_speech'},
+                }, 422),
+        ),
+      );
+      await noSpeech.controller.toggleVoice();
+      await noSpeech.controller.toggleVoice();
+      expect(noSpeech.controller.messages.last.text, contains('did not hear'));
+      expect(noSpeech.controller.busy, isFalse);
+    },
+  );
 
   test('a recording that runs too long stops by itself', () async {
     final api = newApi(
@@ -363,4 +386,63 @@ void main() {
     }
     expect(describeError(StateError('x')), contains('Something went wrong'));
   });
+
+  test(
+    'the bubble shows plain text, and the reply read aloud is the short clean version',
+    () async {
+      final long =
+          '**Plan for tomorrow**\n\n- 10:00 Review Big-O (60 min)\n- 16:00 Birthday card (15 min)\n\nFile: $stored\n\n${'More detail here. ' * 30}Does this look good?';
+      final server = answering(
+        [text(long)],
+        other: (r) => r.action == 'transcribe'
+            ? {'text': 'Plan tomorrow', 'duration_ms': 1}
+            : {'saved': 1},
+      );
+      final rig = Rig(server);
+      await rig.controller.toggleVoice();
+      await rig.controller.toggleVoice();
+      final shown = rig.controller.messages.last.text;
+      expect(shown, isNot(contains('**')));
+      expect(shown, isNot(contains('supabase.co')));
+      expect(rig.speaker.spoken, hasLength(1));
+      final spoken = rig.speaker.spoken.single;
+      expect(spoken.length, lessThanOrEqualTo(240));
+      expect(spoken, isNot(contains('http')));
+      expect(spoken, isNot(contains('**')));
+    },
+  );
+
+  test(
+    'with "read answers aloud" turned off nothing is spoken, even after talking',
+    () async {
+      final server = answering(
+        [text('Sure, what time?')],
+        other: (r) => r.action == 'transcribe'
+            ? {'text': 'Plan tomorrow', 'duration_ms': 1}
+            : {'saved': 1},
+      );
+      final settings = MemoryVoiceSettingsStore()
+        ..value = const VoiceSettings(enabled: false);
+      final api = newApi(server);
+      final speaker = FakeSpeaker();
+      final controller = ChatController(
+        session: AgentSession(
+          api: api,
+          tools: FakeTools(),
+          mode: 'planning',
+          today: '2026-10-27',
+          date: '2026-10-28',
+        ),
+        api: api,
+        picks: FakePicks(),
+        voice: FakeVoice(),
+        speaker: speaker,
+        voiceSettings: settings,
+      );
+      await controller.toggleVoice();
+      await controller.toggleVoice();
+      expect(controller.messages.last.text, 'Sure, what time?');
+      expect(speaker.spoken, isEmpty);
+    },
+  );
 }

@@ -94,7 +94,11 @@ void main() {
       );
       final sending = c.send('hi');
       await t.pump();
-      expect(find.text('Thinking…'), findsOneWidget);
+      expect(
+        find.text('Thinking…'),
+        findsNothing,
+        reason: 'the person does not need to see that',
+      );
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(
         t.widget<IconButton>(find.byKey(const Key('send'))).onPressed,
@@ -103,7 +107,7 @@ void main() {
       gate.complete();
       await sending;
       await t.pumpAndSettle();
-      expect(find.text('Thinking…'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(find.text('ok'), findsOneWidget);
     },
   );
@@ -128,7 +132,8 @@ void main() {
           {
             'type': 'pdf',
             'title': 'German for beginners',
-            'url': 'https://proj.supabase.co/storage/v1/object/sign/materials/u/a.pdf?token=t',
+            'url':
+                'https://proj.supabase.co/storage/v1/object/sign/materials/u/a.pdf?token=t',
           },
         ],
       ),

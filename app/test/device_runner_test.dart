@@ -6,6 +6,8 @@ import 'package:life_agent/device/stores.dart';
 class FakeAlarms implements AlarmScheduler {
   final List<(DateTime, String)> set = [];
   bool allow = true;
+  final List<String> cancelled = [];
+  final List<String> scheduled = [];
 
   @override
   Future<bool> schedule({
@@ -13,9 +15,15 @@ class FakeAlarms implements AlarmScheduler {
     required DateTime at,
     required String message,
   }) async {
-    if (allow) set.add((at, message));
+    if (allow) {
+      set.add((at, message));
+      scheduled.add(id);
+    }
     return allow;
   }
+
+  @override
+  Future<void> cancel(String id) async => cancelled.add(id);
 }
 
 class FakeEnforcer implements LimitEnforcer {
@@ -76,16 +84,19 @@ void main() {
     },
   );
 
-  test('running the morning plan twice never duplicates a task, and a ticked task stays ticked', () async {
-    await run.run('create_task', {'title': 'Gym', 'minutes': 60});
-    final first = (await tasks.forDate('2026-10-28')).single;
-    await tasks.setDone(first.id, true);
-    await run.run('create_task', {'title': 'gym', 'minutes': 45});
-    final all = await tasks.forDate('2026-10-28');
-    expect(all, hasLength(1));
-    expect(all.single.minutes, 45);
-    expect(all.single.done, isTrue);
-  });
+  test(
+    'running the morning plan twice never duplicates a task, and a ticked task stays ticked',
+    () async {
+      await run.run('create_task', {'title': 'Gym', 'minutes': 60});
+      final first = (await tasks.forDate('2026-10-28')).single;
+      await tasks.setDone(first.id, true);
+      await run.run('create_task', {'title': 'gym', 'minutes': 45});
+      final all = await tasks.forDate('2026-10-28');
+      expect(all, hasLength(1));
+      expect(all.single.minutes, 45);
+      expect(all.single.done, isTrue);
+    },
+  );
 
   test(
     'bad task arguments are answered in words, and nothing is saved',
@@ -132,16 +143,19 @@ void main() {
     },
   );
 
-  test('a limit for an app that is not on this phone is saved but honestly reported as not enforced', () async {
-    enforcer.notFound = ['tiktok'];
-    final r = await run.run('set_app_limit', {
-      'app': 'TikTok',
-      'minutes_per_day': 20,
-    });
-    expect(r['ok'], true);
-    expect(r['enforced'], false);
-    expect(r['warning'], contains('not found on this phone'));
-  });
+  test(
+    'a limit for an app that is not on this phone is saved but honestly reported as not enforced',
+    () async {
+      enforcer.notFound = ['tiktok'];
+      final r = await run.run('set_app_limit', {
+        'app': 'TikTok',
+        'minutes_per_day': 20,
+      });
+      expect(r['ok'], true);
+      expect(r['enforced'], false);
+      expect(r['warning'], contains('not found on this phone'));
+    },
+  );
 
   test('set_app_limit refuses nonsense', () async {
     expect(
@@ -171,38 +185,41 @@ void main() {
     expect(alarms.set.single.$2, 'Study German in 5 minutes');
   });
 
-  test('a time that already passed, a bad time and a refusing phone are all reported, never faked', () async {
-    expect(
-      (await run.run('schedule_alarm', {
-        'time': '07:00',
-        'message': 'x',
-      }))['error'],
-      contains('already passed'),
-    );
-    expect(
-      (await run.run('schedule_alarm', {
-        'time': '25:00',
-        'message': 'x',
-      }))['error'],
-      contains('HH:MM'),
-    );
-    expect(
-      (await run.run('schedule_alarm', {
-        'time': '18:00',
-        'message': '',
-      }))['error'],
-      contains('message'),
-    );
-    alarms.allow = false;
-    expect(
-      (await run.run('schedule_alarm', {
-        'time': '18:00',
-        'message': 'x',
-      }))['error'],
-      contains('permission'),
-    );
-    expect(alarms.set, isEmpty);
-  });
+  test(
+    'a time that already passed, a bad time and a refusing phone are all reported, never faked',
+    () async {
+      expect(
+        (await run.run('schedule_alarm', {
+          'time': '07:00',
+          'message': 'x',
+        }))['error'],
+        contains('already passed'),
+      );
+      expect(
+        (await run.run('schedule_alarm', {
+          'time': '25:00',
+          'message': 'x',
+        }))['error'],
+        contains('HH:MM'),
+      );
+      expect(
+        (await run.run('schedule_alarm', {
+          'time': '18:00',
+          'message': '',
+        }))['error'],
+        contains('message'),
+      );
+      alarms.allow = false;
+      expect(
+        (await run.run('schedule_alarm', {
+          'time': '18:00',
+          'message': 'x',
+        }))['error'],
+        contains('permission'),
+      );
+      expect(alarms.set, isEmpty);
+    },
+  );
 
   test('an unknown tool is refused', () async {
     expect((await run.run('delete_everything', {}))['ok'], false);
@@ -211,5 +228,105 @@ void main() {
   test('dates and times are formatted the way the API wants them', () {
     expect(isoDate(DateTime(2026, 1, 5)), '2026-01-05');
     expect(hhmm(DateTime(2026, 1, 5, 7, 3)), '07:03');
+  });
+
+  group('a new plan replaces the old one for today', () {
+    test(
+      'tasks, limits and reminders the new plan no longer has are removed; the ones it still has are kept',
+      () async {
+        await run.run('create_task', {'title': 'Gym', 'minutes': 60});
+        await run.run('create_task', {'title': 'Study', 'minutes': 40});
+        await run.run('set_app_limit', {
+          'app': 'TikTok',
+          'minutes_per_day': 30,
+        });
+        await run.run('set_app_limit', {
+          'app': 'Instagram',
+          'minutes_per_day': 20,
+        });
+        await run.run('schedule_alarm', {
+          'time': '18:00',
+          'message': 'Gym soon',
+        });
+        await run.run('schedule_alarm', {
+          'time': '19:00',
+          'message': 'Study soon',
+        });
+
+        // the next morning run applies a changed plan: Study stays, Read is new, Gym and Instagram are gone
+        await run.beginRun();
+        await run.run('create_task', {'title': 'study', 'minutes': 45});
+        await run.run('create_task', {'title': 'Read', 'minutes': 30});
+        await run.run('set_app_limit', {
+          'app': 'TikTok',
+          'minutes_per_day': 25,
+        });
+        await run.run('schedule_alarm', {
+          'time': '19:00',
+          'message': 'Study soon',
+        });
+        await run.endRun();
+
+        expect((await tasks.forDate('2026-10-28')).map((t) => t.title), [
+          'study',
+          'Read',
+        ]);
+        expect(await limits.all(), {'TikTok': 25});
+        expect(enforcer.last, {'TikTok': 25}, reason: 'the watcher is told');
+        expect(
+          alarms.cancelled,
+          hasLength(1),
+          reason: 'only the 18:00 reminder is cancelled',
+        );
+        expect(alarms.cancelled.single, contains('18:00'));
+      },
+    );
+
+    test(
+      'a task that was ticked off stays even if the new plan does not have it',
+      () async {
+        await run.run('create_task', {'title': 'Gym', 'minutes': 60});
+        await tasks.setDone(
+          (await tasks.forDate('2026-10-28')).single.id,
+          true,
+        );
+        await run.beginRun();
+        await run.run('create_task', {'title': 'Read', 'minutes': 30});
+        await run.endRun();
+        expect(
+          (await tasks.forDate(
+            '2026-10-28',
+          )).map((t) => '${t.title}:${t.done}'),
+          ['Gym:true', 'Read:false'],
+        );
+      },
+    );
+
+    test('nothing is removed unless a run was started and finished', () async {
+      await run.run('create_task', {'title': 'Gym', 'minutes': 60});
+      await run.endRun(); // no beginRun: a no-op
+      await run
+          .beginRun(); // started but never finished (an error in the middle)
+      await run.run('create_task', {'title': 'Read', 'minutes': 30});
+      expect((await tasks.forDate('2026-10-28')).map((t) => t.title), [
+        'Gym',
+        'Read',
+      ]);
+    });
+
+    test('other days are never touched', () async {
+      await tasks.upsert(
+        const LocalTask(
+          id: 'y',
+          date: '2026-10-27',
+          title: 'Yesterday',
+          minutes: 10,
+        ),
+      );
+      await run.beginRun();
+      await run.run('create_task', {'title': 'Read', 'minutes': 30});
+      await run.endRun();
+      expect((await tasks.forDate('2026-10-27')).single.title, 'Yesterday');
+    });
   });
 }

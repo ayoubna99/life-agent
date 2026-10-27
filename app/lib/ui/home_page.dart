@@ -135,7 +135,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _Banner(
                 key: const Key('setup'),
                 icon: Icons.tune,
-                text: 'Tell me when you sleep and which apps distract you, so I can plan for you.',
+                text:
+                    'Tell me when you sleep and which apps distract you, so I can plan for you.',
                 action: 'Set up',
                 onTap: _openSettings,
               ),
@@ -143,7 +144,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _Banner(
                 key: const Key('usage-banner'),
                 icon: Icons.insights_outlined,
-                text: 'Allow "Usage access" so I can plan with your real screen time.',
+                text:
+                    'Allow "Usage access" so I can plan with your real screen time.',
                 action: 'Allow',
                 onTap: s.native.openUsageAccessSettings,
               ),

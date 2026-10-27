@@ -37,7 +37,7 @@ The APK is `build/app/outputs/flutter-apk/app-release.apk`. A build without the 
 ## Tests
 
 ```
-flutter test                      # 69 tests: client, chat loop, device tools, chat, voice, files, home, settings
+flutter test                      # 83 tests: client, chat loop, device tools, chat, voice, files, home, settings
 cd android && ./gradlew testDebugUnitTest   # 29 Kotlin tests: usage maths, nudge rules, app-name matching
 ```
 

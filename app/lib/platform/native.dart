@@ -23,6 +23,8 @@ abstract class Native {
     required String message,
   });
 
+  Future<void> cancelAlarm(String id);
+
   /// Tells the background watcher which apps are limited (name -> minutes per day). Returns the names it could not find on this phone.
   Future<List<String>> applyLimits(Map<String, int> limits);
 
@@ -92,6 +94,9 @@ class MethodChannelNative implements Native {
   });
 
   @override
+  Future<void> cancelAlarm(String id) => _call<void>('cancelAlarm', {'id': id});
+
+  @override
   Future<List<String>> applyLimits(Map<String, int> limits) async => [
     for (final a in await _call<List<Object?>>('applyLimits', {
       'limits': limits,
@@ -144,6 +149,15 @@ class NativeAlarmScheduler implements AlarmScheduler {
       return false;
     }
   }
+
+  @override
+  Future<void> cancel(String id) async {
+    try {
+      await native.cancelAlarm(id);
+    } on PlatformException {
+      // nothing to cancel, or the phone refused: the reminder is harmless either way
+    }
+  }
 }
 
 class NativeLimitEnforcer implements LimitEnforcer {
@@ -156,7 +170,8 @@ class NativeLimitEnforcer implements LimitEnforcer {
     try {
       return await native.applyLimits(limits);
     } on PlatformException {
-      return limits.keys.toList(); // the watcher could not be told: report every app as not watched
+      return limits.keys
+          .toList(); // the watcher could not be told: report every app as not watched
     }
   }
 }

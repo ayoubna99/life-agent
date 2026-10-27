@@ -136,7 +136,7 @@ class _ChatPageState extends State<ChatPage> {
                 ],
               ),
             ),
-          if (c.status != null)
+          if (c.status != null || c.busy)
             Padding(
               key: const Key('status'),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -149,9 +149,10 @@ class _ChatPageState extends State<ChatPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   if (c.busy) const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(c.status!, style: theme.textTheme.bodySmall),
-                  ),
+                  if (c.status != null)
+                    Expanded(
+                      child: Text(c.status!, style: theme.textTheme.bodySmall),
+                    ),
                 ],
               ),
             ),

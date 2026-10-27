@@ -13,6 +13,14 @@ class FakeTools implements DeviceTools {
   final Future<Map<String, Object?>> Function(String, Map<String, Object?>)?
   handler;
   final List<String> ran = [];
+  int begins = 0;
+  int ends = 0;
+
+  @override
+  Future<void> beginRun() async => begins++;
+
+  @override
+  Future<void> endRun() async => ends++;
 
   @override
   Future<Map<String, Object?>> run(
@@ -39,29 +47,33 @@ AgentSession sessionFor(
 );
 
 void main() {
-  test('a plain answer: one request, the text comes back, the conversation id is remembered for the next message', () async {
-    var n = 0;
-    final server = FakeServer(
-      (r) => ok(
-        r,
-        agent: (_) => text(++n == 1 ? 'What do you want to do?' : 'And sleep?'),
-      ),
-    );
-    final s = sessionFor(server, FakeTools(), mode: 'planning');
-    final first = await s.send('Plan tomorrow');
-    expect(first.text, 'What do you want to do?');
-    expect(s.conversationId, 'c0000000-0000-0000-0000-000000000001');
-    await s.send('Study and gym');
-    expect(server.agentCalls[0].json.containsKey('conversation_id'), isFalse);
-    expect(
-      server.agentCalls[1].json['conversation_id'],
-      'c0000000-0000-0000-0000-000000000001',
-    );
-    expect(server.agentCalls[1].json['input'], {
-      'type': 'user',
-      'text': 'Study and gym',
-    });
-  });
+  test(
+    'a plain answer: one request, the text comes back, the conversation id is remembered for the next message',
+    () async {
+      var n = 0;
+      final server = FakeServer(
+        (r) => ok(
+          r,
+          agent: (_) =>
+              text(++n == 1 ? 'What do you want to do?' : 'And sleep?'),
+        ),
+      );
+      final s = sessionFor(server, FakeTools(), mode: 'planning');
+      final first = await s.send('Plan tomorrow');
+      expect(first.text, 'What do you want to do?');
+      expect(s.conversationId, 'c0000000-0000-0000-0000-000000000001');
+      await s.send('Study and gym');
+      expect(server.agentCalls[0].json.containsKey('conversation_id'), isFalse);
+      expect(
+        server.agentCalls[1].json['conversation_id'],
+        'c0000000-0000-0000-0000-000000000001',
+      );
+      expect(server.agentCalls[1].json['input'], {
+        'type': 'user',
+        'text': 'Study and gym',
+      });
+    },
+  );
 
   test('attachments go with the message', () async {
     final server = FakeServer((r) => ok(r, agent: (_) => text('Read it.')));
@@ -76,66 +88,72 @@ void main() {
     ]);
   });
 
-  test('the morning run: the phone runs every tool the agent asks for and sends back all results, then the agent finishes', () async {
-    final replies = [
-      calls([
-        ('create_task', {'title': 'Study German', 'minutes': 40}),
-        ('set_app_limit', {'app': 'TikTok', 'minutes_per_day': 30}),
-      ]),
-      text('Your day is set up: 1 task, 1 limit.', planSaved: false),
-    ];
-    var i = 0;
-    final server = FakeServer((r) => ok(r, agent: (_) => replies[i++]));
-    final tools = FakeTools(
-      (name, args) async => name == 'create_task'
-          ? {'ok': true, 'task_id': 't1'}
-          : {'ok': true, 'enforced': true},
-    );
-    final started = <String>[];
-    final reply = await sessionFor(
-      server,
-      tools,
-      onToolStart: (c) => started.add(c.name),
-    ).send('Apply today');
-    expect(reply.text, 'Your day is set up: 1 task, 1 limit.');
-    expect(tools.ran, ['create_task', 'set_app_limit']);
-    expect(started, ['create_task', 'set_app_limit']);
-    expect(reply.toolsRun.map((t) => t.ok), [true, true]);
-    final results = (server.agentCalls[1].json['input'] as Map);
-    expect(results['type'], 'tool_results');
-    final list = (results['results'] as List).cast<Map>();
-    expect(list.map((r) => r['tool_call_id']), ['call_1', 'call_2']);
-    expect(jsonDecode(list[0]['content'] as String), {
-      'ok': true,
-      'task_id': 't1',
-    });
-    expect(
-      server.agentCalls[1].json['conversation_id'],
-      'c0000000-0000-0000-0000-000000000001',
-    );
-  });
+  test(
+    'the morning run: the phone runs every tool the agent asks for and sends back all results, then the agent finishes',
+    () async {
+      final replies = [
+        calls([
+          ('create_task', {'title': 'Study German', 'minutes': 40}),
+          ('set_app_limit', {'app': 'TikTok', 'minutes_per_day': 30}),
+        ]),
+        text('Your day is set up: 1 task, 1 limit.', planSaved: false),
+      ];
+      var i = 0;
+      final server = FakeServer((r) => ok(r, agent: (_) => replies[i++]));
+      final tools = FakeTools(
+        (name, args) async => name == 'create_task'
+            ? {'ok': true, 'task_id': 't1'}
+            : {'ok': true, 'enforced': true},
+      );
+      final started = <String>[];
+      final reply = await sessionFor(
+        server,
+        tools,
+        onToolStart: (c) => started.add(c.name),
+      ).send('Apply today');
+      expect(reply.text, 'Your day is set up: 1 task, 1 limit.');
+      expect(tools.ran, ['create_task', 'set_app_limit']);
+      expect(started, ['create_task', 'set_app_limit']);
+      expect(reply.toolsRun.map((t) => t.ok), [true, true]);
+      final results = (server.agentCalls[1].json['input'] as Map);
+      expect(results['type'], 'tool_results');
+      final list = (results['results'] as List).cast<Map>();
+      expect(list.map((r) => r['tool_call_id']), ['call_1', 'call_2']);
+      expect(jsonDecode(list[0]['content'] as String), {
+        'ok': true,
+        'task_id': 't1',
+      });
+      expect(
+        server.agentCalls[1].json['conversation_id'],
+        'c0000000-0000-0000-0000-000000000001',
+      );
+    },
+  );
 
-  test('a tool that crashes is reported to the agent as a failure, so it can tell the user', () async {
-    final replies = [
-      calls([
-        ('schedule_alarm', {'time': '18:00', 'message': 'Study'}),
-      ]),
-      text('I could not set the reminder.'),
-    ];
-    var i = 0;
-    final server = FakeServer((r) => ok(r, agent: (_) => replies[i++]));
-    final tools = FakeTools(
-      (n, a) async => throw StateError('boom: secret detail'),
-    );
-    final reply = await sessionFor(server, tools).send('Apply today');
-    expect(reply.toolsRun.single.ok, isFalse);
-    final content =
-        ((server.agentCalls[1].json['input'] as Map)['results'] as List)
-                .single['content']
-            as String;
-    expect(jsonDecode(content)['ok'], false);
-    expect(content, isNot(contains('secret detail')));
-  });
+  test(
+    'a tool that crashes is reported to the agent as a failure, so it can tell the user',
+    () async {
+      final replies = [
+        calls([
+          ('schedule_alarm', {'time': '18:00', 'message': 'Study'}),
+        ]),
+        text('I could not set the reminder.'),
+      ];
+      var i = 0;
+      final server = FakeServer((r) => ok(r, agent: (_) => replies[i++]));
+      final tools = FakeTools(
+        (n, a) async => throw StateError('boom: secret detail'),
+      );
+      final reply = await sessionFor(server, tools).send('Apply today');
+      expect(reply.toolsRun.single.ok, isFalse);
+      final content =
+          ((server.agentCalls[1].json['input'] as Map)['results'] as List)
+                  .single['content']
+              as String;
+      expect(jsonDecode(content)['ok'], false);
+      expect(content, isNot(contains('secret detail')));
+    },
+  );
 
   test('plan_saved and artifacts are collected across the rounds', () async {
     final replies = [
@@ -201,6 +219,47 @@ void main() {
           isA<AgentException>().having((e) => e.capacity, 'capacity', true),
         ),
       );
+    },
+  );
+
+  test(
+    'the morning run tells the phone when it starts and when it ends normally, other modes never do',
+    () async {
+      final server = FakeServer(
+        (r) => ok(r, agent: (_) => text('Your day is set up.')),
+      );
+      final tools = FakeTools();
+      await sessionFor(server, tools).send('Apply today');
+      expect([tools.begins, tools.ends], [1, 1]);
+
+      final planning = FakeTools();
+      await sessionFor(server, planning, mode: 'planning').send('hi');
+      expect([planning.begins, planning.ends], [0, 0]);
+    },
+  );
+
+  test(
+    'an error in the middle of the morning run does not finish it (nothing is cleaned up)',
+    () async {
+      var i = 0;
+      final server = FakeServer((r) {
+        if (r.path.startsWith('/auth/')) return jsonResponse(tokenBody());
+        return i++ == 0
+            ? jsonResponse(
+                calls([
+                  ('create_task', {'title': 'x', 'minutes': 5}),
+                ]),
+              )
+            : jsonResponse({
+                'error': {'code': 'agent_timeout'},
+              }, 504);
+      });
+      final tools = FakeTools();
+      await expectLater(
+        sessionFor(server, tools).send('go'),
+        throwsA(isA<AgentException>()),
+      );
+      expect([tools.begins, tools.ends], [1, 0]);
     },
   );
 }

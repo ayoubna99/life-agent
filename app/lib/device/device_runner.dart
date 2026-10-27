@@ -10,6 +10,9 @@ abstract class AlarmScheduler {
     required DateTime at,
     required String message,
   });
+
+  /// Cancels a reminder made earlier (it may already have fired: that is fine).
+  Future<void> cancel(String id);
 }
 
 /// Tells the background watcher which apps are limited. Returns the apps it could not find on this phone.
@@ -27,21 +30,69 @@ class DeviceToolRunner implements DeviceTools {
     required this.limits,
     required this.alarms,
     required this.enforcer,
+    AlarmLog? alarmLog,
     DateTime Function()? now,
     String Function()? newId,
   }) : _now = now ?? DateTime.now,
        _newId =
            newId ??
-           (() => DateTime.now().microsecondsSinceEpoch.toRadixString(36));
+           (() => DateTime.now().microsecondsSinceEpoch.toRadixString(36)),
+       alarmLog = alarmLog ?? MemoryAlarmLog();
 
   final TaskStore tasks;
   final LimitStore limits;
   final AlarmScheduler alarms;
   final LimitEnforcer enforcer;
+  final AlarmLog alarmLog;
   final DateTime Function() _now;
   final String Function() _newId;
 
   Map<String, Object?> _no(String why) => {'ok': false, 'error': why};
+
+  // What this run has set up so far; whatever else exists for today is left over from an older plan.
+  bool _inRun = false;
+  final Set<String> _taskTitles = {};
+  final Set<String> _limitApps = {};
+  final Set<String> _alarmIds = {};
+
+  @override
+  Future<void> beginRun() async {
+    _inRun = true;
+    _taskTitles.clear();
+    _limitApps.clear();
+    _alarmIds.clear();
+  }
+
+  /// Today now mirrors the plan: tasks that are not done, limits and reminders from an older plan are removed.
+  /// Ticked-off tasks stay (they are what happened today).
+  @override
+  Future<void> endRun() async {
+    if (!_inRun) return;
+    _inRun = false;
+    final today = isoDate(_now());
+    for (final t in await tasks.forDate(today)) {
+      if (!t.done && !_taskTitles.contains(t.title.toLowerCase())) {
+        await tasks.remove(t.id);
+      }
+    }
+    final all = await limits.all();
+    final stale = [
+      for (final app in all.keys)
+        if (!_limitApps.contains(app.toLowerCase())) app,
+    ];
+    if (stale.isNotEmpty) {
+      for (final app in stale) {
+        await limits.remove(app);
+      }
+      await enforcer.apply(await limits.all());
+    }
+    for (final id in await alarmLog.ids(today)) {
+      if (!_alarmIds.contains(id)) {
+        await alarms.cancel(id);
+        await alarmLog.remove(today, id);
+      }
+    }
+  }
 
   @override
   Future<Map<String, Object?>> run(String name, Map<String, Object?> args) {
@@ -106,6 +157,7 @@ class DeviceToolRunner implements DeviceTools {
         startTime: start as String?,
       ),
     );
+    _taskTitles.add(title.toLowerCase());
     return {'ok': true, 'task_id': saved.id};
   }
 
@@ -116,6 +168,7 @@ class DeviceToolRunner implements DeviceTools {
     if (minutes == null)
       return _no('minutes_per_day must be a whole number from 5 to 720.');
     await limits.set(app, minutes);
+    _limitApps.add(app.toLowerCase());
     final missing = await enforcer.apply(await limits.all());
     final unknown = missing.any((m) => m.toLowerCase() == app.toLowerCase());
     return {
@@ -143,15 +196,25 @@ class DeviceToolRunner implements DeviceTools {
       int.parse(time.substring(3)),
     );
     if (!at.isAfter(now)) return _no('$time has already passed today.');
-    final ok = await alarms.schedule(
-      id: '${isoDate(at)}-$time-${message.hashCode}',
-      at: at,
-      message: message,
-    );
+    final id = '${isoDate(at)}-$time-${_stableHash(message)}';
+    final ok = await alarms.schedule(id: id, at: at, message: message);
+    if (ok) {
+      _alarmIds.add(id);
+      await alarmLog.add(isoDate(at), id);
+    }
     return ok
         ? {'ok': true}
         : _no(
             'The phone did not allow the reminder (check the alarms permission).',
           );
+  }
+
+  /// The same number for the same text on every run (String.hashCode is not promised to be).
+  static String _stableHash(String s) {
+    var h = 0x811c9dc5;
+    for (final c in s.codeUnits) {
+      h = ((h ^ c) * 0x01000193) & 0xffffffff;
+    }
+    return h.toRadixString(36);
   }
 }

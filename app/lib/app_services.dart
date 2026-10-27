@@ -1,3 +1,5 @@
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:http/http.dart' as http;
 
 import 'agent/agent_api.dart';
@@ -10,6 +12,7 @@ import 'device/device_runner.dart';
 import 'device/stores.dart';
 import 'platform/native.dart';
 import 'platform/services.dart';
+import 'platform/voice_settings.dart';
 
 /// Everything the screens need, in one place, so a test can swap any piece for a fake.
 class AppServices {
@@ -22,13 +25,19 @@ class AppServices {
     required this.voice,
     required this.speaker,
     required this.opener,
+    required this.voiceSettings,
+    this.languageCode = 'en',
+    AlarmLog? alarmLog,
     this.baseUrl = AppConfig.supabaseUrl,
     this.apiKey = AppConfig.supabaseKey,
     DateTime Function()? now,
-  }) : now = now ?? DateTime.now;
+  }) : now = now ?? DateTime.now,
+       alarmLog = alarmLog ?? MemoryAlarmLog();
 
   factory AppServices.real() {
     final client = http.Client();
+    final voiceSettings = PrefsVoiceSettingsStore();
+    final languageCode = PlatformDispatcher.instance.locale.languageCode;
     final auth = AnonymousAuth(
       baseUrl: AppConfig.supabaseUrl,
       apiKey: AppConfig.supabaseKey,
@@ -47,8 +56,14 @@ class AppServices {
       native: MethodChannelNative(),
       picks: DevicePicks(),
       voice: DeviceVoice(),
-      speaker: DeviceSpeaker(),
+      speaker: DeviceSpeaker(
+        settings: voiceSettings,
+        languageCode: languageCode,
+      ),
       opener: DeviceLinks(),
+      voiceSettings: voiceSettings,
+      languageCode: languageCode,
+      alarmLog: PrefsAlarmLog(),
     );
   }
 
@@ -60,6 +75,9 @@ class AppServices {
   final VoiceRecorder voice;
   final Speaker speaker;
   final LinkOpener opener;
+  final VoiceSettingsStore voiceSettings;
+  final String languageCode;
+  final AlarmLog alarmLog;
   final String baseUrl;
   final String apiKey;
   final DateTime Function() now;
@@ -75,6 +93,7 @@ class AppServices {
     limits: limits,
     alarms: NativeAlarmScheduler(native),
     enforcer: NativeLimitEnforcer(native),
+    alarmLog: alarmLog,
     now: now,
   );
 

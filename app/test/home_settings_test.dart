@@ -4,6 +4,7 @@ import 'package:life_agent/agent/models.dart';
 import 'package:life_agent/app_services.dart';
 import 'package:life_agent/chat/chat_page.dart';
 import 'package:life_agent/device/stores.dart';
+import 'package:life_agent/platform/voice_settings.dart';
 import 'package:life_agent/ui/home_page.dart';
 import 'package:life_agent/ui/settings_page.dart';
 
@@ -45,8 +46,9 @@ class Env {
       native: native,
       picks: FakePicks(),
       voice: FakeVoice(),
-      speaker: FakeSpeaker(),
+      speaker: speaker,
       opener: opener,
+      voiceSettings: voiceSettings,
       baseUrl: base,
       apiKey: key,
       now: () => DateTime(2026, 10, 27, hour, 15),
@@ -60,6 +62,8 @@ class Env {
   final tasks = MemoryTaskStore();
   final native = FakeNative();
   final opener = FakeOpener();
+  final speaker = FakeSpeaker();
+  final voiceSettings = MemoryVoiceSettingsStore();
   Map<String, Object?>? saved;
 }
 
@@ -383,6 +387,58 @@ void main() {
           matching: find.byIcon(Icons.check_circle),
         ),
         findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'settings: the voice can be switched off, chosen from the phone\'s voices, and heard',
+    (t) async {
+      final env = Env(profile: {'apps': <String>[]});
+      t.view.physicalSize = const Size(900, 3600);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(
+        MaterialApp(
+          home: SettingsPage(services: env.services, profile: const Profile()),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('Automatic'), findsOneWidget);
+
+      await t.tap(find.byKey(const Key('voice-enabled')));
+      await t.pumpAndSettle();
+      expect(env.voiceSettings.value.enabled, isFalse);
+
+      await t.tap(find.byKey(const Key('voice')));
+      await t.pumpAndSettle();
+      expect(
+        find.byKey(const Key('voice-fr-fr-x-vlf-local')),
+        findsNothing,
+        reason: 'only the phone\'s language is offered',
+      );
+      await t.tap(find.byKey(const Key('voice-en-us-x-iom-local')));
+      await t.pumpAndSettle();
+      expect(env.voiceSettings.value.voiceName, 'en-us-x-iom-local');
+      expect(env.voiceSettings.value.locale, 'en-US');
+      expect(
+        env.speaker.spoken.last,
+        contains('how I sound'),
+        reason: 'the new voice is heard right away',
+      );
+
+      await t.tap(find.byKey(const Key('voice')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('voice-auto')));
+      await t.pumpAndSettle();
+      expect(env.voiceSettings.value.voiceName, isNull);
+
+      await t.ensureVisible(find.byKey(const Key('voice-sample')));
+      await t.tap(find.byKey(const Key('voice-sample')));
+      expect(
+        env.speaker.spoken.length,
+        3,
+        reason: 'one sample per chosen voice plus the button',
       );
     },
   );

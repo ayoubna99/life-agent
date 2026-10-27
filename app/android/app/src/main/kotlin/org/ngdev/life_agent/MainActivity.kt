@@ -47,6 +47,10 @@ class MainActivity : FlutterActivity() {
                 result.success(null)
             }
             "scheduleAlarm" -> result.success(scheduleAlarm(call.argument<String>("id")!!, call.argument<Number>("at")!!.toLong(), call.argument<String>("message")!!))
+            "cancelAlarm" -> {
+                cancelAlarm(call.argument<String>("id")!!)
+                result.success(null)
+            }
             "applyLimits" -> result.success(applyLimits(call.argument<Map<String, Number>>("limits") ?: emptyMap()))
             "configureNudges" -> {
                 NativeStore(this).saveConfig(call.argument<String>("baseUrl")!!, call.argument<String>("apiKey")!!, call.argument<String>("locale") ?: "en")
@@ -98,6 +102,14 @@ class MainActivity : FlutterActivity() {
         val pending = PendingIntent.getBroadcast(this, code, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         (getSystemService(Context.ALARM_SERVICE) as AlarmManager).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pending)
         return true
+    }
+
+    /** Cancels a reminder scheduled earlier (same request code as when it was made). Fine if it already fired. */
+    private fun cancelAlarm(id: String) {
+        val intent = Intent(this, AlarmReceiver::class.java)
+        val pending = PendingIntent.getBroadcast(this, id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE) ?: return
+        (getSystemService(Context.ALARM_SERVICE) as AlarmManager).cancel(pending)
+        pending.cancel()
     }
 
     /** Saves the limits for the watcher and starts it. Returns the names that are not installed on this phone. */

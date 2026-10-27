@@ -7,6 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'voice_settings.dart';
+
 /// A file the user chose to send to the agent.
 class PickedFile {
   const PickedFile({
@@ -39,6 +41,9 @@ abstract class VoiceRecorder {
 abstract class Speaker {
   Future<void> speak(String text);
   Future<void> stop();
+
+  /// The voices installed on this phone.
+  Future<List<SpeechVoice>> voices();
 }
 
 abstract class LinkOpener {
@@ -115,10 +120,45 @@ class DeviceVoice implements VoiceRecorder {
 }
 
 class DeviceSpeaker implements Speaker {
+  DeviceSpeaker({required this.settings, this.languageCode = 'en'});
+
+  final VoiceSettingsStore settings;
+  final String languageCode;
   final FlutterTts _tts = FlutterTts();
 
   @override
-  Future<void> speak(String text) async => _tts.speak(text);
+  Future<List<SpeechVoice>> voices() async {
+    try {
+      final raw = await _tts.getVoices as List<dynamic>?;
+      return [
+        for (final v in raw ?? const [])
+          if (v is Map && v['name'] != null)
+            SpeechVoice(
+              name: v['name'].toString(),
+              locale: (v['locale'] ?? '').toString(),
+            ),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  @override
+  Future<void> speak(String text) async {
+    final s = await settings.load();
+    try {
+      final chosen = s.voiceName != null
+          ? SpeechVoice(name: s.voiceName!, locale: s.locale ?? '')
+          : pickDefaultVoice(await voices(), languageCode);
+      if (chosen != null)
+        await _tts.setVoice({'name': chosen.name, 'locale': chosen.locale});
+      await _tts.setSpeechRate(s.rate);
+      await _tts.setPitch(1.0);
+    } catch (_) {
+      // the phone's default voice still works
+    }
+    await _tts.speak(text);
+  }
 
   @override
   Future<void> stop() async => _tts.stop();

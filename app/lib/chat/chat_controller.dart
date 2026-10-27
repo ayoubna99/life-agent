@@ -8,6 +8,8 @@ import '../agent/models.dart';
 import '../platform/native.dart';
 import '../platform/services.dart';
 import 'messages.dart';
+import 'text_clean.dart';
+import '../platform/voice_settings.dart';
 
 /// The state behind a chat screen: what was said, what the agent is doing right now, files and voice.
 class ChatController extends ChangeNotifier {
@@ -17,6 +19,7 @@ class ChatController extends ChangeNotifier {
     required this.picks,
     required this.voice,
     required this.speaker,
+    this.voiceSettings,
     this.usage,
     this.keywords = const [],
     this.languages = const ['English'],
@@ -28,6 +31,7 @@ class ChatController extends ChangeNotifier {
   final FilePicks picks;
   final VoiceRecorder voice;
   final Speaker speaker;
+  final VoiceSettingsStore? voiceSettings;
   final UsageSync? usage;
   final List<String> keywords;
   final List<String> languages;
@@ -67,22 +71,28 @@ class ChatController extends ChangeNotifier {
       ),
     );
     attachments.clear();
-    _set(busy: true, status: 'Thinking…');
+    _set(busy: true, clearStatus: true);
     try {
       await _syncUsageOnce();
       final reply = await _ask(body, ids);
-      messages.add(
-        ChatMessage(Who.agent, reply.text, artifacts: reply.artifacts),
-      );
+      final shown = plainText(reply.text);
+      messages.add(ChatMessage(Who.agent, shown, artifacts: reply.artifacts));
       planSaved = planSaved || reply.planSaved;
-      if (_spokenInput && reply.text.isNotEmpty)
-        unawaited(speaker.speak(reply.text));
+      if (_spokenInput) await _speakShort(shown);
     } catch (e) {
       _note(describeError(e), error: true);
     } finally {
       _spokenInput = false;
       _set(busy: false, clearStatus: true);
     }
+  }
+
+  /// Read aloud only after the person talked, in their chosen voice, and only a short clean version (never the links or the whole plan).
+  Future<void> _speakShort(String text) async {
+    final voice = await voiceSettings?.load();
+    if (voice != null && !voice.enabled) return;
+    final short = speakable(text);
+    if (short.isNotEmpty) unawaited(speaker.speak(short));
   }
 
   Future<AgentReply> _ask(String body, List<String> ids) {
@@ -101,7 +111,7 @@ class ChatController extends ChangeNotifier {
         'I cannot see your screen time yet. Turn on "Usage access" for Life in Settings and I will plan with your real numbers.',
       );
     }
-    _set(status: 'Thinking…');
+    _set(clearStatus: true);
   }
 
   Future<void> attachDocument() => _attach(picks.pickDocument);

@@ -193,156 +193,170 @@ void main() {
     );
   });
 
-  test('usage goes up in batches of 200, and plan/profile/nudge use the documented fields', () async {
-    final server = FakeServer(
-      (r) => ok(
-        r,
-        agent: (req) {
-          switch (req.action) {
-            case 'usage':
-              return {'saved': 1};
-            case 'plan':
-              return {
-                'plan': {
-                  'date': '2026-10-28',
-                  'status': 'ready',
-                  'data': {
-                    'wake': '07:00',
-                    'tasks': [
-                      {
-                        'title': 'Study German',
-                        'minutes': 40,
-                        'start_time': '19:00',
-                        'links': ['https://x/a.pdf'],
-                      },
-                    ],
-                    'limits': [
-                      {'app': 'TikTok', 'minutes_per_day': 30},
-                    ],
+  test(
+    'usage goes up in batches of 200, and plan/profile/nudge use the documented fields',
+    () async {
+      final server = FakeServer(
+        (r) => ok(
+          r,
+          agent: (req) {
+            switch (req.action) {
+              case 'usage':
+                return {'saved': 1};
+              case 'plan':
+                return {
+                  'plan': {
+                    'date': '2026-10-28',
+                    'status': 'ready',
+                    'data': {
+                      'wake': '07:00',
+                      'tasks': [
+                        {
+                          'title': 'Study German',
+                          'minutes': 40,
+                          'start_time': '19:00',
+                          'links': ['https://x/a.pdf'],
+                        },
+                      ],
+                      'limits': [
+                        {'app': 'TikTok', 'minutes_per_day': 30},
+                      ],
+                    },
                   },
-                },
-              };
-            case 'profile':
-              return {
-                'profile': {
-                  'wake': '07:00',
-                  'sleep': '23:30',
-                  'apps': ['TikTok'],
-                },
-              };
-            case 'nudge':
-              return {'text': 'Start your German now.', 'task': 'Study German'};
-          }
-          throw StateError('unexpected ${req.action}');
+                };
+              case 'profile':
+                return {
+                  'profile': {
+                    'wake': '07:00',
+                    'sleep': '23:30',
+                    'apps': ['TikTok'],
+                  },
+                };
+              case 'nudge':
+                return {
+                  'text': 'Start your German now.',
+                  'task': 'Study German',
+                };
+            }
+            throw StateError('unexpected ${req.action}');
+          },
+        ),
+      );
+      final api = newApi(server);
+      await api.uploadUsage([
+        for (var i = 0; i < 450; i++)
+          UsageRow(day: '2026-10-27', app: 'App$i', minutes: 5),
+      ]);
+      expect(
+        [for (final c in server.agentCalls) (c.json['days'] as List).length],
+        [200, 200, 50],
+      );
+
+      final plan = (await api.plan('2026-10-28'))!;
+      expect(plan.tasks.single.title, 'Study German');
+      expect(plan.tasks.single.startTime, '19:00');
+      expect(plan.limits.single.minutesPerDay, 30);
+      expect(plan.wake, '07:00');
+
+      final profile = await api.profile(
+        set: const Profile(wake: '07:00', sleep: '23:30', apps: ['TikTok']),
+      );
+      expect(profile.sleep, '23:30');
+      expect(server.agentCalls.last.json, {
+        'action': 'profile',
+        'set': {
+          'wake': '07:00',
+          'sleep': '23:30',
+          'apps': ['TikTok'],
         },
-      ),
-    );
-    final api = newApi(server);
-    await api.uploadUsage([
-      for (var i = 0; i < 450; i++)
-        UsageRow(day: '2026-10-27', app: 'App$i', minutes: 5),
-    ]);
-    expect(
-      [for (final c in server.agentCalls) (c.json['days'] as List).length],
-      [200, 200, 50],
-    );
+      });
 
-    final plan = (await api.plan('2026-10-28'))!;
-    expect(plan.tasks.single.title, 'Study German');
-    expect(plan.tasks.single.startTime, '19:00');
-    expect(plan.limits.single.minutesPerDay, 30);
-    expect(plan.wake, '07:00');
-
-    final profile = await api.profile(
-      set: const Profile(wake: '07:00', sleep: '23:30', apps: ['TikTok']),
-    );
-    expect(profile.sleep, '23:30');
-    expect(server.agentCalls.last.json, {
-      'action': 'profile',
-      'set': {
-        'wake': '07:00',
-        'sleep': '23:30',
-        'apps': ['TikTok'],
-      },
-    });
-
-    final n = await api.nudge(
-      today: '2026-10-28',
-      now: '17:40',
-      app: 'TikTok',
-      usedMinutes: 25,
-      limitMinutes: 30,
-      reason: 'approaching',
-      done: ['Gym'],
-    );
-    expect(n.text, 'Start your German now.');
-    expect(n.task, 'Study German');
-    expect(server.agentCalls.last.json['used_minutes'], 25);
-    expect(server.agentCalls.last.json['done'], ['Gym']);
-  });
+      final n = await api.nudge(
+        today: '2026-10-28',
+        now: '17:40',
+        app: 'TikTok',
+        usedMinutes: 25,
+        limitMinutes: 30,
+        reason: 'approaching',
+        done: ['Gym'],
+      );
+      expect(n.text, 'Start your German now.');
+      expect(n.task, 'Study German');
+      expect(server.agentCalls.last.json['used_minutes'], 25);
+      expect(server.agentCalls.last.json['done'], ['Gym']);
+    },
+  );
 
   test('a missing plan is null', () async {
     final server = FakeServer((r) => ok(r, agent: (_) => {'plan': null}));
     expect(await newApi(server).plan('2026-10-28'), isNull);
   });
 
-  test('a file is uploaded to the user\'s own folder, then the server is asked to read it', () async {
-    final server = FakeServer(
-      (r) => ok(
-        r,
-        agent: (_) => {
-          'document_id': 'd0000000-0000-0000-0000-000000000001',
-          'name': 'My timetable.jpg',
-          'kind': 'image',
-          'read_by': 'vision',
-          'pages': 1,
-        },
-      ),
-    );
-    final r = await newApi(server).attach(
-      bytes: Uint8List.fromList([1, 2, 3]),
-      fileName: 'My timetable.jpg',
-      contentType: 'image/jpeg',
-    );
-    expect(r.kind, 'image');
-    expect(r.readBy, 'vision');
-    final upload = server.requests.firstWhere(
-      (q) => q.path.startsWith('/storage/'),
-    );
-    expect(upload.method, 'POST');
-    expect(
-      upload.path,
-      matches(
-        RegExp('^/storage/v1/object/uploads/$userId/\\d+-My_timetable\\.jpg\$'),
-      ),
-    );
-    expect(upload.headers['content-type'], 'image/jpeg');
-    expect(upload.headers['authorization'], 'Bearer access-1');
-    expect(upload.bodyBytes, [1, 2, 3]);
-    final ask = server.agentCalls.single.json;
-    expect(ask['action'], 'attach');
-    expect(ask['name'], 'My timetable.jpg');
-    expect((ask['path'] as String).startsWith('$userId/'), isTrue);
-  });
+  test(
+    'a file is uploaded to the user\'s own folder, then the server is asked to read it',
+    () async {
+      final server = FakeServer(
+        (r) => ok(
+          r,
+          agent: (_) => {
+            'document_id': 'd0000000-0000-0000-0000-000000000001',
+            'name': 'My timetable.jpg',
+            'kind': 'image',
+            'read_by': 'vision',
+            'pages': 1,
+          },
+        ),
+      );
+      final r = await newApi(server).attach(
+        bytes: Uint8List.fromList([1, 2, 3]),
+        fileName: 'My timetable.jpg',
+        contentType: 'image/jpeg',
+      );
+      expect(r.kind, 'image');
+      expect(r.readBy, 'vision');
+      final upload = server.requests.firstWhere(
+        (q) => q.path.startsWith('/storage/'),
+      );
+      expect(upload.method, 'POST');
+      expect(
+        upload.path,
+        matches(
+          RegExp(
+            '^/storage/v1/object/uploads/$userId/\\d+-My_timetable\\.jpg\$',
+          ),
+        ),
+      );
+      expect(upload.headers['content-type'], 'image/jpeg');
+      expect(upload.headers['authorization'], 'Bearer access-1');
+      expect(upload.bodyBytes, [1, 2, 3]);
+      final ask = server.agentCalls.single.json;
+      expect(ask['action'], 'attach');
+      expect(ask['name'], 'My timetable.jpg');
+      expect((ask['path'] as String).startsWith('$userId/'), isTrue);
+    },
+  );
 
-  test('a failed upload says so and never asks the server to read a file that is not there', () async {
-    final server = FakeServer(
-      (r) => r.path.startsWith('/storage/')
-          ? jsonResponse({'message': 'too big'}, 413)
-          : ok(r, agent: (_) => {}),
-    );
-    await expectLater(
-      newApi(server).attach(
-        bytes: Uint8List(3),
-        fileName: 'a.pdf',
-        contentType: 'application/pdf',
-      ),
-      throwsA(
-        isA<AgentException>().having((e) => e.code, 'code', 'upload_failed'),
-      ),
-    );
-    expect(server.agentCalls, isEmpty);
-  });
+  test(
+    'a failed upload says so and never asks the server to read a file that is not there',
+    () async {
+      final server = FakeServer(
+        (r) => r.path.startsWith('/storage/')
+            ? jsonResponse({'message': 'too big'}, 413)
+            : ok(r, agent: (_) => {}),
+      );
+      await expectLater(
+        newApi(server).attach(
+          bytes: Uint8List(3),
+          fileName: 'a.pdf',
+          contentType: 'application/pdf',
+        ),
+        throwsA(
+          isA<AgentException>().having((e) => e.code, 'code', 'upload_failed'),
+        ),
+      );
+      expect(server.agentCalls, isEmpty);
+    },
+  );
 
   test(
     'a recording is uploaded as WAV and the transcript comes back',

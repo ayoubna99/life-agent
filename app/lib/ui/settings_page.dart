@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../agent/models.dart';
 import '../app_services.dart';
+import '../platform/voice_settings.dart';
 
 /// What the app asks in its own screens (never in the chat): when you wake and sleep, which apps pull you away,
 /// what you are working towards. Saved on the server, so the agent already knows it.
@@ -32,17 +33,73 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _notifications = false;
   bool _alarms = false;
   bool _overlay = false;
+  VoiceSettings _voice = const VoiceSettings();
+  List<SpeechVoice> _voices = [];
 
   @override
   void initState() {
     super.initState();
     _permissions();
+    _loadVoice();
   }
 
   @override
   void dispose() {
     _focus.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadVoice() async {
+    final voice = await s.voiceSettings.load();
+    final all = await s.speaker.voices();
+    if (mounted)
+      setState(() {
+        _voice = voice;
+        _voices = voicesFor(all, s.languageCode);
+      });
+  }
+
+  Future<void> _saveVoice(VoiceSettings v) async {
+    setState(() => _voice = v);
+    await s.voiceSettings.save(v);
+  }
+
+  String _voiceLabel(SpeechVoice v) {
+    final i = _voices.indexOf(v);
+    final natural = v.name.toLowerCase().contains('network')
+        ? ' · natural'
+        : '';
+    return 'Voice ${i + 1} · ${v.locale}$natural';
+  }
+
+  Future<void> _pickVoice() async {
+    final chosen = await showDialog<SpeechVoice?>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Voice'),
+        children: [
+          SimpleDialogOption(
+            key: const Key('voice-auto'),
+            onPressed: () =>
+                Navigator.pop(ctx, const SpeechVoice(name: '', locale: '')),
+            child: const Text('Automatic (the best one for your language)'),
+          ),
+          for (final v in _voices)
+            SimpleDialogOption(
+              key: Key('voice-${v.name}'),
+              onPressed: () => Navigator.pop(ctx, v),
+              child: Text(_voiceLabel(v)),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null) return;
+    await _saveVoice(
+      chosen.name.isEmpty
+          ? _voice.copyWith(clearVoice: true)
+          : _voice.copyWith(voiceName: chosen.name, locale: chosen.locale),
+    );
+    await s.speaker.speak('Hi, this is how I sound.');
   }
 
   Future<void> _permissions() async {
@@ -222,6 +279,53 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           const Divider(),
+          Text('Voice', style: theme.textTheme.titleMedium),
+          SwitchListTile(
+            key: const Key('voice-enabled'),
+            title: const Text('Read answers aloud after I talk'),
+            subtitle: const Text('A short version, never the links'),
+            value: _voice.enabled,
+            onChanged: (v) => _saveVoice(_voice.copyWith(enabled: v)),
+          ),
+          ListTile(
+            key: const Key('voice'),
+            leading: const Icon(Icons.record_voice_over_outlined),
+            title: const Text('Voice'),
+            subtitle: Text(
+              _voice.voiceName == null
+                  ? 'Automatic'
+                  : _voiceLabel(
+                      SpeechVoice(
+                        name: _voice.voiceName!,
+                        locale: _voice.locale ?? '',
+                      ),
+                    ),
+            ),
+            onTap: _voices.isEmpty ? null : _pickVoice,
+          ),
+          ListTile(
+            leading: const Icon(Icons.speed_outlined),
+            title: const Text('Speed'),
+            subtitle: Slider(
+              key: const Key('voice-rate'),
+              min: 0.3,
+              max: 0.8,
+              divisions: 10,
+              value: _voice.rate.clamp(0.3, 0.8),
+              onChanged: (v) =>
+                  setState(() => _voice = _voice.copyWith(rate: v)),
+              onChangeEnd: (v) => _saveVoice(_voice.copyWith(rate: v)),
+            ),
+          ),
+          TextButton.icon(
+            key: const Key('voice-sample'),
+            onPressed: () => s.speaker.speak(
+              'Hi, this is how I sound. Tell me about your day.',
+            ),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Hear a sample'),
+          ),
+          const Divider(),
           Text('Permissions', style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           _Perm(
@@ -259,7 +363,8 @@ class _SettingsPageState extends State<SettingsPage> {
             key: const Key('perm-overlay'),
             icon: Icons.layers_outlined,
             title: 'Show over other apps',
-            why: 'Lets a nudge appear on top of the app you are in (optional: otherwise you get a notification)',
+            why:
+                'Lets a nudge appear on top of the app you are in (optional: otherwise you get a notification)',
             granted: _overlay,
             onTap: () async {
               await s.native.openOverlaySettings();
