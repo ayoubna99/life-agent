@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { BadRequest, CapacityReached, LIMITS, NotFound, parseChatRequest, QuotaExceeded, runChat } from '../supabase/functions/_shared/loop.ts';
 import type { ChatRequest } from '../supabase/functions/_shared/loop.ts';
 import { MuseError } from '../supabase/functions/_shared/muse.ts';
-import { callsReply, cfg, fakeNet, MemoryStore, realPdfMakeLoader, SUPABASE_URL, textReply, USER } from './helpers.ts';
+import { askedToConfirm, callsReply, cfg, fakeNet, MemoryStore, realPdfMakeLoader, SUPABASE_URL, textReply, USER } from './helpers.ts';
 import type { FakeNet } from './helpers.ts';
 
 const base = (over: Partial<ChatRequest> = {}): ChatRequest => ({
@@ -48,7 +48,7 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(sys.content!, /today: 2026-10-26/);
   assert.match(sys.content!, /plan_date: 2026-10-27/);
   assert.match(sys.content!, /user_language: fr/);
-  assert.deepEqual(names(planning.net), ['get_usage', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document']);
+  assert.deepEqual(names(planning.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document']);
 
   const execute = setup([textReply('ok')]);
   await execute.run(base({ mode: 'execute' }));
@@ -95,7 +95,7 @@ test('save_plan stores the plan for the day the APP named, not the day the model
     callsReply(['save_plan', { date: '1999-01-01', tasks: [{ title: 'Study algorithms', minutes: 40, start_time: '18:00' }], limits: [{ app: 'Instagram', minutes_per_day: 30 }] }]),
     textReply('Your plan is ready.'),
   ]);
-  const r = await run(base({ input: { type: 'user', text: 'Yes, confirmed' } }));
+  const r = await run(base({ conversation_id: await askedToConfirm(store), input: { type: 'user', text: 'Yes, confirmed' } }));
   assert.equal(r.plan_saved, true);
   assert.equal(store.plans.size, 1);
   const plan = store.plans.get('2026-10-27')!;
@@ -109,7 +109,7 @@ test('a plan the validator refuses goes back to the model, which fixes it and tr
     callsReply(['save_plan', { tasks: [{ title: 'Study', minutes: 30 }] }]),
     textReply('Saved.'),
   ]);
-  const r = await run(base());
+  const r = await run(base({ conversation_id: await askedToConfirm(store), input: { type: 'user', text: 'Yes' } }));
   assert.equal(r.plan_saved, true);
   assert.equal(store.plans.get('2026-10-27')!.data.tasks[0].minutes, 30);
   const firstAnswer = JSON.parse(net.museRequests[1].messages.find((m) => m.role === 'tool')!.content!);
@@ -125,7 +125,7 @@ test('save_plan drops dead links, keeps live and our own, and says which it drop
     ],
     { 'https://dead.example/a': 404, 'https://dead.example/b': 404 },
   );
-  await run(base());
+  await run(base({ conversation_id: await askedToConfirm(store), input: { type: 'user', text: 'Yes' } }));
   const tasks = store.plans.get('2026-10-27')!.data.tasks;
   assert.deepEqual(tasks[0].links, ['https://live.example/a', own]);
   assert.equal('links' in tasks[1], false);
@@ -312,4 +312,36 @@ test('the shared daily budget stops everyone, before any model call, and a user 
   await assert.rejects(limited(base(), 100, 1), (e: unknown) => e instanceof QuotaExceeded);
   assert.equal(store.globalQuota, 3);
   void run;
+});
+
+test('a plan is never saved in the first exchange: the agent is told to show it and ask first', async () => {
+  const { store, net, run } = setup([
+    callsReply(['save_plan', { tasks: [{ title: 'Study', minutes: 30 }] }]),
+    textReply('Here is the plan: Study 30 minutes. Does that look good?'),
+  ]);
+  const r = await run(base());
+  assert.equal(r.plan_saved, false);
+  assert.equal(store.plans.size, 0);
+  const answer = JSON.parse(net.museRequests[1].messages.find((m) => m.role === 'tool')!.content!);
+  assert.match(answer.error, /ask the user to confirm/);
+});
+
+test('planning can read the plan that already exists, so new requests are added to it', async () => {
+  const { store, net, run } = setup([callsReply(['get_plan', { date: '2026-10-27' }]), textReply('You already have Study at 18:00. What should I add?')]);
+  store.plans.set('2026-10-27', { date: '2026-10-27', status: 'ready', data: { tasks: [{ title: 'Study', minutes: 40, start_time: '18:00' }], limits: [] } });
+  await run(base());
+  const answer = JSON.parse(net.museRequests[1].messages.find((m) => m.role === 'tool')!.content!);
+  assert.equal(answer.plan.tasks[0].title, 'Study');
+  assert.match(net.museRequests[0].messages[0].content!, /ADDITIONS/);
+});
+
+test('what the person reads: reasoning, markdown marks and our own file links never reach the chat', async () => {
+  const link = `${SUPABASE_URL}/storage/v1/object/sign/materials/${USER}/2026-10-28-sheet.pdf?token=eyJhbGciOi.very.long`;
+  const raw = `<think>The user wants a sheet, I should call create_material.</think>All done.\n\n**1. Big-O sheet:**\n${link}\n\n## Plan\n* 10:00 Review (60 min)`;
+  const { store, run } = setup([textReply(raw)]);
+  const r = await run(base());
+  assert.equal(r.type, 'text');
+  if (r.type !== 'text') return;
+  assert.equal(r.text, 'All done.\n\n1. Big-O sheet:\n\nPlan\n- 10:00 Review (60 min)');
+  assert.equal(store.messages.get(r.conversation_id)!.at(-1)!.content, r.text, 'the stored history is the clean text too');
 });

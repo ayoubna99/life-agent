@@ -8,7 +8,7 @@ import { cleanMessage, parseNudgeRequest, pickNextTask, runNudge } from '../supa
 import { toHHMM, toMinutes, validateProfile } from '../supabase/functions/_shared/profile.ts';
 import { runServerTool } from '../supabase/functions/_shared/tools.ts';
 import type { ToolEnv } from '../supabase/functions/_shared/tools.ts';
-import { callsReply, cfg, fakeNet, jwt, makePdf, MemoryStore, realPdfLoader, realPdfMakeLoader, SUPABASE_URL, textReply, USER } from './helpers.ts';
+import { askedToConfirm, callsReply, cfg, fakeNet, jwt, makePdf, MemoryStore, realPdfLoader, realPdfMakeLoader, SUPABASE_URL, textReply, USER } from './helpers.ts';
 
 // ---------- profile ----------
 
@@ -206,7 +206,7 @@ test('the whole study flow: link in, summary sheet out, review task saved with t
   ]);
   // The agent loop gets the page through the same fetch as the model; route by URL.
   const fetchImpl = (async (url: string, init?: RequestInit) => (url.startsWith('https://muse.example') ? net.fetchImpl(url, init as RequestInit) : page(url))) as unknown as typeof fetch;
-  const r = await runChat({ ...base, input: { type: 'user', text: 'I want to memorise https://course.example/merge-sort for tomorrow' } }, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit: 80, globalLimit: 1000, fetchImpl, randomId: () => 'abcdef1234567890', loadPdfMaker: realPdfMakeLoader });
+  const r = await runChat({ ...base, conversation_id: await askedToConfirm(store), input: { type: 'user', text: 'I want to memorise https://course.example/merge-sort for tomorrow' } }, { cfg, store, userId: USER, supabaseUrl: SUPABASE_URL, dailyLimit: 80, globalLimit: 1000, fetchImpl, randomId: () => 'abcdef1234567890', loadPdfMaker: realPdfMakeLoader });
   assert.equal(r.type, 'text');
   assert.equal(r.plan_saved, true);
   assert.deepEqual([...store.files.keys()], ['2026-10-27-merge-sort-in-one-page-abcdef12.pdf']);

@@ -29,6 +29,8 @@ export interface ToolEnv {
   userId?: string;
   /** How many more pictures this request may make. */
   images?: { left: number };
+  /** False until the user has seen a reply from the agent: a plan cannot be saved in the very first exchange. */
+  canSavePlan?: boolean;
   loadPdf?: PdfLoader;
   loadPdfMaker?: PdfMakeLoader;
 }
@@ -96,6 +98,7 @@ export async function runServerTool(name: string, args: Record<string, unknown>,
     }
 
     case 'save_plan': {
+      if (env.canSavePlan === false) return problem('Do not save yet. Show the plan as a short list and ask the user to confirm it; save it only after they say yes.');
       const checked = validatePlan(args);
       if (!checked.ok) return problem(checked.error);
       const plan = checked.plan;

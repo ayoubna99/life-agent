@@ -205,6 +205,9 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
     toStore.length = 0;
   }
 
+  // A plan is saved only after the user has had a reply and answered it: never in the first exchange.
+  const canSavePlan = history.some((m) => m.role === 'assistant' && !m.tool_calls?.length && typeof m.content === 'string' && m.content.trim() !== '');
+
   const pending = pendingCalls(history);
   if (req.input.type === 'user') {
     if (pending.length) throw new BadRequest('tool_results_required');
@@ -280,6 +283,7 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
         imageModel: deps.imageModel,
         userId: deps.userId,
         images,
+        canSavePlan,
         loadPdf: deps.loadPdf,
         loadPdfMaker: deps.loadPdfMaker,
       });

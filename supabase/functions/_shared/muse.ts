@@ -4,6 +4,7 @@
 // `tool_calls` in the answer). If the real format differs, only this file changes.
 
 import type { ToolDef } from './prompt.ts';
+import { cleanReply } from './reply.ts';
 
 export interface MuseConfig {
   baseUrl: string;
@@ -132,14 +133,15 @@ export function parseStep(body: unknown): AgentStep {
     }
     const assistant: ChatMessage = {
       role: 'assistant',
-      content: typeof message.content === 'string' ? message.content : null,
+      content: typeof message.content === 'string' && message.content.trim() !== '' ? cleanReply(message.content) : null,
       tool_calls: rawCalls as ToolCall[],
     };
     return { kind: 'tool_calls', calls, assistant };
   }
 
   if (typeof message.content === 'string' && message.content.trim() !== '') {
-    return { kind: 'text', text: message.content };
+    const text = cleanReply(message.content);
+    if (text !== '') return { kind: 'text', text };
   }
   throw new MuseError('bad_output');
 }

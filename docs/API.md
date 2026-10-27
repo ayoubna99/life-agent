@@ -38,6 +38,7 @@ Send **summaries**, never the raw event log.
    "input":{"type":"tool_results","results":[{"tool_call_id":"call_1","content":"{\"ok\":true}"}]}}
   ```
   `content` is a string (JSON is fine). If a tool failed, say so in it: the agent tells the user.
+- Answers are plain text: reasoning tags, markdown marks and links to our own private files are removed before the text is stored or sent (files arrive in `artifacts`).
 - `plan_saved: true` means a plan was saved during this request; call `plan` to read it.
 - `artifacts` lists what the agent made during this request for the phone to show: `[{"type":"pdf"|"image"|"markdown","title":"My day card","url":"https://..."}]` (links valid for 3 days; the file stays in Storage).
 
@@ -48,8 +49,8 @@ Send **summaries**, never the raw event log.
 | Tool | Runs | Modes | Does |
 |---|---|---|---|
 | `get_usage(app, days?)` | server | planning, review | reads the uploaded usage |
-| `get_plan(date)` | server | execute, review | reads the saved plan |
-| `save_plan(wake?, sleep?, tasks[], limits[], note?)` | server | planning, review | validates and stores the plan for `date`; drops dead links |
+| `get_plan(date)` | server | planning, execute, review | reads the saved plan |
+| `save_plan(wake?, sleep?, tasks[], limits[], note?)` | server | planning, review | validates and stores the plan for `date` (replacing the stored one, so the agent first reads it with `get_plan` and keeps what should stay: new requests are ADDED); drops dead links. **Refused in the first exchange of a conversation**: the agent must show the plan and the user must answer first |
 | `create_material(title, markdown, format?)` | server | planning, review | writes a study or work sheet as a **PDF** (default, A4, drawn from the markdown: headings, bullets, numbered lists, simple tables) or as `markdown`; stores it in `materials/<user id>/` and returns a link valid for 3 days. The PDF fonts are Latin only; other scripts show as `?` and the agent is told to use `markdown` instead. Appears in the chat answer's `artifacts` as `pdf` or `markdown` |
 | `create_image(title, prompt, shape?)` | server | planning, review | makes one picture with Muse Image (`square`, `portrait` or `landscape`), stores it in `materials/<user id>/images/` and returns a link valid for 3 days. Max 1 per request. It also appears in the chat answer's `artifacts` |
 | `fetch_url(url, offset?)` | server | planning, review | reads a public web page or PDF (12 000 characters at a time) |

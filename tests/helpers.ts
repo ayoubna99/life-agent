@@ -198,3 +198,13 @@ export function makeWav(opts: { seconds?: number; rate?: number; channels?: numb
   tag(36, 'data'); v.setUint32(40, opts.dataSize ?? bytes, true);
   return out;
 }
+
+/** A planning conversation where the agent already showed its plan and asked for confirmation (so a save is allowed next). */
+export async function askedToConfirm(store: MemoryStore, kind: Mode = 'planning'): Promise<string> {
+  const id = await store.createConversation(kind);
+  await store.appendMessages(id, [
+    { role: 'user', content: 'Study algorithms tomorrow' },
+    { role: 'assistant', content: 'Here is the plan: study 40 minutes at 18:00. Does that look good?' },
+  ]);
+  return id;
+}
