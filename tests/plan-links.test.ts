@@ -47,7 +47,13 @@ test('every bad plan is refused with one sentence the model can act on', () => {
   refused({ tasks: [task({ first_step: '' })] }, /first_step/);
   refused({ tasks: [task({ instructions: Array.from({ length: 9 }, () => 'x') })] }, /instructions/);
   refused({ tasks: [task({ instructions: [''] })] }, /instructions/);
-  refused({ tasks: [task({ links: Array.from({ length: 6 }, () => 'https://a.co') })] }, /links/);
+  refused({ tasks: [task({ links: Array.from({ length: 7 }, () => 'https://a.co') })] }, /links/);
+  refused({ tasks: [task({ alarm: 'loud' })] }, /alarm/);
+  refused({ tasks: [task({ notes: 'x'.repeat(601) })] }, /notes/);
+  // a signed link to our own study sheet is long, and must fit
+  const long = `https://proj.supabase.co/storage/v1/object/sign/materials/${'u'.repeat(36)}/2026-10-30-sheet.pdf?token=${'t'.repeat(400)}`;
+  const ok = validatePlan({ tasks: [task({ links: [long], notes: 'Chapter 3, pages 40-60', alarm: 'in_app' })] });
+  assert.equal(ok.ok, true);
   refused({ tasks: [task()], limits: [{ app: 'X', minutes_per_day: 3 }] }, /limits\[0\]/);
   refused({ tasks: [task()], limits: [{ app: 'X', minutes_per_day: 30 }, { app: 'x', minutes_per_day: 40 }] }, /twice/);
   refused({ tasks: [task()], limits: 'none' }, /limits/);

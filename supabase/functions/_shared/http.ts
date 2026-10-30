@@ -1,7 +1,8 @@
 // The request handler, kept free of Deno APIs so the tests can call it directly.
 
 import { BadRequest, CapacityReached, DEFAULT_DAILY_LIMIT, DEFAULT_GLOBAL_LIMIT, limitFromEnv, NotFound, parseChatRequest, QuotaExceeded, runChat, spendQuota } from './loop.ts';
-import { configFromEnv, MuseError } from './muse.ts';
+import { configFromEnv, modelsFor, MuseError } from './muse.ts';
+import type { MuseConfig } from './muse.ts';
 import { ASR_MODEL, languageBias, transcribeWav } from './asr.ts';
 import { runNudge, parseNudgeRequest } from './nudge.ts';
 import { describeImage, describePdf, IMAGES, ImageError, sniffImage } from './images.ts';
@@ -11,6 +12,10 @@ import { parseWav, WavError } from './wav.ts';
 import type { PdfLoader } from './pdf.ts';
 import { isDate } from './plan.ts';
 import { validateProfile } from './profile.ts';
+import { parseExperimentLog, summarizeExperiments } from './experiments.ts';
+import { parseNights } from './nights.ts';
+import { parseEveningRequest, runEvening } from './evening.ts';
+import { speakableText, synthesize, toBase64, ttsConfigFromEnv } from './tts.ts';
 import { RestStore, StoreError } from './store.ts';
 import type { Store, UsageRow } from './store.ts';
 
@@ -84,6 +89,9 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
     env.storeFor?.(who.userId, who.jwt, apikey) ??
     new RestStore({ supabaseUrl, apikey, jwt: who.jwt, userId: who.userId, fetchImpl: env.fetchImpl });
 
+  // Muse Spark, or the first model available (web search, photos and pictures need Muse Spark itself).
+  const spark = (models: MuseConfig[]): MuseConfig => models.find((m) => m.label === 'spark') ?? models[0];
+
   try {
     const limits = {
       dailyLimit: limitFromEnv(env.get('AGENT_DAILY_LIMIT'), DEFAULT_DAILY_LIMIT),
@@ -91,8 +99,10 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
     };
     switch (body.action) {
       case 'chat': {
+        const models = modelsFor('chat', (n) => env.get(n));
         const result = await runChat(parseChatRequest(body), {
-          cfg: configFromEnv((n) => env.get(n)),
+          cfg: spark(models),
+          models,
           store,
           userId: who.userId,
           supabaseUrl,
@@ -106,13 +116,24 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
         return json(result);
       }
       case 'nudge': {
+        const models = modelsFor('nudge', (n) => env.get(n));
         const result = await runNudge(parseNudgeRequest(body), {
-          cfg: configFromEnv((n) => env.get(n)),
+          cfg: spark(models),
+          models,
           store,
           ...limits,
           fetchImpl: env.fetchImpl,
         });
         return json(result);
+      }
+      case 'speak': {
+        // Lify's voice (Orpheus on Baseten). Not configured: the phone uses its own voice, no error worth showing.
+        const cfg = ttsConfigFromEnv((n) => env.get(n));
+        if (!cfg) return json({ error: { code: 'tts_not_configured' } }, 501);
+        const text = typeof body.text === 'string' ? speakableText(body.text) : '';
+        if (!text) throw new BadRequest('bad_text');
+        const wav = await synthesize(cfg, text, env.fetchImpl ?? fetch);
+        return json({ audio: toBase64(wav), format: 'wav', voice: cfg.voice });
       }
       case 'profile': {
         if (body.set !== undefined) {
@@ -208,13 +229,43 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
         return json({ text: out.text, duration_ms: out.durationMs });
       }
       case 'usage': {
-        const rows = parseUsage(body);
+        // "days" (minutes per app per day) and, optionally, "nights" (phone-down times)
+        const nights = parseNights(body.nights);
+        const rows = body.days === undefined && nights.length > 0 ? [] : parseUsage(body);
         await store.upsertUsage(rows);
-        return json({ saved: rows.length });
+        await store.upsertNights(nights);
+        return json({ saved: rows.length, ...(nights.length ? { nights: nights.length } : {}) });
+      }
+      case 'evening': {
+        const models = modelsFor('evening', (n) => env.get(n));
+        const result = await runEvening(parseEveningRequest(body), {
+          cfg: spark(models),
+          models,
+          store,
+          ...limits,
+          fetchImpl: env.fetchImpl,
+        });
+        return json(result);
       }
       case 'plan': {
         if (!isDate(body.date)) throw new BadRequest('bad_date');
         return json({ plan: await store.getPlan(body.date) });
+      }
+      case 'strategy': {
+        // The newest version and the ones before it (newest first), so the app can show how the strategy changed.
+        const history = await store.listStrategies(30);
+        return json({ strategy: history[0] ?? null, history });
+      }
+      case 'experiments': {
+        // The phone sends finished experiment results ("log"); the app reads the totals (no "log").
+        if (body.log !== undefined) await store.saveExperiments(parseExperimentLog(body.log));
+        if (body.today !== undefined && !isDate(body.today)) throw new BadRequest('bad_date');
+        const days = body.days === undefined ? 14 : body.days;
+        if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > 30) throw new BadRequest('bad_days');
+        const today = isDate(body.today) ? body.today : new Date().toISOString().slice(0, 10);
+        const since = new Date(`${today}T00:00:00Z`);
+        since.setUTCDate(since.getUTCDate() - (days - 1));
+        return json({ results: summarizeExperiments(await store.getExperiments(since.toISOString().slice(0, 10))) });
       }
       default:
         throw new BadRequest('unknown_action');

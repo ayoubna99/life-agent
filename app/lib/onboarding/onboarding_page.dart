@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../agent/models.dart';
 import '../app_services.dart';
+import '../ui/last_night.dart';
 import '../ui/motion.dart';
 import '../ui/theme.dart';
 import 'onboarding_store.dart';
@@ -84,7 +85,8 @@ class _OnboardingFlowState extends State<OnboardingFlow>
   bool _usage = false,
       _notifications = false,
       _alarms = false,
-      _overlay = false;
+      _overlay = false,
+      _calendar = false;
 
   // reality check
   RealityCheck? _reality;
@@ -93,6 +95,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
 
   // Lify
   String _wake = '07:00';
+  PhoneNight? _lastNight;
   String _sleep = '23:00';
   bool _finishing = false;
 
@@ -104,6 +107,18 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     WidgetsBinding.instance.addObserver(this);
     _name.addListener(() => setState(() {}));
     _checkPermissions();
+    _loadLastNight();
+  }
+
+  /// When the phone went quiet last night, for "Last night your phone went quiet at 03:12" next to the sleep time.
+  Future<void> _loadLastNight() async {
+    try {
+      final nights = await s.native.phoneNights(nights: 2);
+      if (mounted && nights.isNotEmpty)
+        setState(() => _lastNight = nights.first);
+    } catch (_) {
+      // no usage access yet: nothing to say
+    }
   }
 
   @override
@@ -121,6 +136,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     if (state == AppLifecycleState.resumed) {
       _checkPermissions().then((_) {
         if (_page == 3 && _usage && _reality == null) _loadReality();
+        if (_usage && _lastNight == null) _loadLastNight();
       });
     }
   }
@@ -132,6 +148,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
       n.notificationsAllowed().catchError((_) => false),
       n.canScheduleExactAlarms().catchError((_) => false),
       n.canDrawOverlay().catchError((_) => false),
+      n.hasCalendarAccess().catchError((_) => false),
     ]);
     if (mounted) {
       setState(() {
@@ -139,6 +156,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         _notifications = r[1];
         _alarms = r[2];
         _overlay = r[3];
+        _calendar = r[4];
       });
     }
   }
@@ -223,6 +241,11 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     } catch (_) {
       // offline: the name is on the phone, the rest can be set in Settings later
     }
+    try {
+      await s.native.configureEvening(
+        sleep: _sleep,
+      ); // "let's plan tomorrow", one hour before
+    } catch (_) {}
     await s.onboarding.finish();
     if (mounted) widget.onDone();
   }
@@ -277,6 +300,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
                             notifications: _notifications,
                             alarms: _alarms,
                             overlay: _overlay,
+                            calendar: _calendar,
                             onUsage: s.native.openUsageAccessSettings,
                             onNotifications: () async {
                               await s.native.requestNotifications();
@@ -284,6 +308,10 @@ class _OnboardingFlowState extends State<OnboardingFlow>
                             },
                             onAlarms: s.native.openExactAlarmSettings,
                             onOverlay: s.native.openOverlaySettings,
+                            onCalendar: () async {
+                              await s.native.requestCalendar();
+                              _checkPermissions();
+                            },
                           ),
                           _RealitySlide(
                             usage: _usage,
@@ -305,6 +333,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
                             onWake: () => _pickTime(true),
                             onSleep: () => _pickTime(false),
                             speak: s.speaker.speak,
+                            lastNight: _lastNight,
                           ),
                         ],
                       ),
@@ -804,14 +833,16 @@ class _PermissionsSlide extends StatelessWidget {
     required this.notifications,
     required this.alarms,
     required this.overlay,
+    required this.calendar,
     required this.onUsage,
     required this.onNotifications,
     required this.onAlarms,
     required this.onOverlay,
+    required this.onCalendar,
   });
 
-  final bool usage, notifications, alarms, overlay;
-  final VoidCallback onUsage, onNotifications, onAlarms, onOverlay;
+  final bool usage, notifications, alarms, overlay, calendar;
+  final VoidCallback onUsage, onNotifications, onAlarms, onOverlay, onCalendar;
 
   @override
   Widget build(BuildContext context) {
@@ -821,6 +852,7 @@ class _PermissionsSlide extends StatelessWidget {
       notifications,
       alarms,
       overlay,
+      calendar,
     ].where((g) => g).length;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
@@ -868,6 +900,15 @@ class _PermissionsSlide extends StatelessWidget {
               granted: overlay,
               onTap: onOverlay,
             ),
+            _PermCard(
+              key: const Key('ob-perm-calendar'),
+              icon: Icons.event_rounded,
+              title: 'Calendar',
+              why:
+                  'I plan around your events, and guard your lectures and meetings',
+              granted: calendar,
+              onTap: onCalendar,
+            ),
           ], start: const Duration(milliseconds: 300)),
           const SizedBox(height: 16),
           Row(
@@ -880,7 +921,7 @@ class _PermissionsSlide extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Lify only sees minutes per app per day, never what you do inside them.  $granted of 4 on.',
+                  'Lify only sees minutes per app per day, never what you do inside them.  $granted of 5 on.',
                   style: t.bodySmall,
                 ),
               ),
@@ -1315,6 +1356,7 @@ class _LifySlide extends StatefulWidget {
     required this.onWake,
     required this.onSleep,
     required this.speak,
+    this.lastNight,
   });
 
   final bool visible;
@@ -1324,6 +1366,7 @@ class _LifySlide extends StatefulWidget {
   final VoidCallback onWake;
   final VoidCallback onSleep;
   final Future<void> Function(String) speak;
+  final PhoneNight? lastNight;
 
   @override
   State<_LifySlide> createState() => _LifySlideState();
@@ -1437,6 +1480,13 @@ class _LifySlideState extends State<_LifySlide>
                         ),
                       ],
                     ),
+                    if (widget.lastNight != null) ...[
+                      const SizedBox(height: 12),
+                      LastNightNote(
+                        night: widget.lastNight!,
+                        sleep: widget.sleep,
+                      ),
+                    ],
                   ],
                 ),
               ),

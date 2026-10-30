@@ -61,7 +61,7 @@ void main() {
   );
 
   test(
-    'if the refresh token is no longer valid a new anonymous user is created',
+    'a dead refresh token never silently makes a new user (it would have no plans and no settings)',
     () async {
       var clock = DateTime(2026, 10, 27, 9);
       var signups = 0;
@@ -73,12 +73,56 @@ void main() {
           tokenBody(id: 'user-$signups', access: 'access-$signups'),
         );
       });
-      final auth = newAuth(server.client, now: () => clock);
+      final store = MemoryAuthStore();
+      final auth = newAuth(server.client, now: () => clock, store: store);
       await auth.ensure();
       clock = clock.add(const Duration(days: 2));
+      await expectLater(
+        auth.ensure(),
+        throwsA(
+          isA<AgentException>().having((e) => e.code, 'code', 'session_lost'),
+        ),
+      );
+      expect(signups, 1);
+      expect(store.value!.userId, 'user-1', reason: 'kept for the next try');
+      final fresh = await auth.startOver();
+      expect(fresh.userId, 'user-2', reason: 'only when the person asks');
+    },
+  );
+
+  test(
+    'the background watcher refreshed the session: the app uses the new one instead of the spent refresh token',
+    () async {
+      var clock = DateTime(2026, 10, 27, 9);
+      final server = FakeServer((r) {
+        if (r.path.contains('refresh_token')) {
+          // refresh-1 was already used by the watcher; only refresh-2 works
+          return r.json['refresh_token'] == 'refresh-2'
+              ? jsonResponse(
+                  tokenBody(access: 'access-3', refresh: 'refresh-3'),
+                )
+              : jsonResponse({'error_code': 'refresh_token_already_used'}, 400);
+        }
+        return jsonResponse(tokenBody());
+      });
+      final store = MemoryAuthStore();
+      final auth = newAuth(server.client, now: () => clock, store: store);
+      await auth.ensure(); // access-1 / refresh-1, held in memory by the app
+      clock = clock.add(const Duration(hours: 2));
+      // meanwhile the watcher refreshed: it saved access-2 / refresh-2 (now expired too)
+      store.value = AuthSession(
+        accessToken: 'access-2',
+        refreshToken: 'refresh-2',
+        userId: userId,
+        expiresAt: clock.subtract(const Duration(minutes: 5)),
+      );
       final s = await auth.ensure();
-      expect(s.userId, 'user-2');
-      expect(signups, 2);
+      expect(s.accessToken, 'access-3');
+      expect(s.userId, userId, reason: 'the same user, the same data');
+      expect(
+        server.requests.where((r) => r.path == '/auth/v1/signup'),
+        hasLength(1),
+      );
     },
   );
 

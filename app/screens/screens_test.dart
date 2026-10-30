@@ -15,7 +15,11 @@ import 'package:life_agent/ui/motion.dart';
 import 'package:life_agent/ui/settings_page.dart';
 import 'package:life_agent/ui/theme.dart';
 
+import 'package:life_agent/platform/experiment_settings.dart';
+import 'package:life_agent/ui/learning.dart';
+
 import '../test/home_settings_test.dart' show Env, plan;
+import '../test/learning_test.dart' show results, strategy;
 
 Future<void> _font(String family, List<String> files) async {
   final l = FontLoader(family);
@@ -174,6 +178,9 @@ void main() {
     await t.pumpWidget(app(HomePage(services: env.services)));
     await t.pumpAndSettle();
     await shot(t, '6_home_top');
+    await t.drag(find.byType(CustomScrollView), const Offset(0, -120));
+    await t.pump();
+    await shot(t, '6b_home_scroll120');
     await t.drag(find.byType(CustomScrollView), const Offset(0, -700));
     await shot(t, '7_home_scrolled');
   });
@@ -242,5 +249,69 @@ void main() {
     );
     await t.pumpAndSettle();
     await shot(t, '12_settings');
+  });
+
+  testWidgets('learning', (t) async {
+    phone(t);
+    final history = [
+      strategy(3, '2026-10-30', 3, [
+        'Cut Instagram limit 30 to 20',
+        'Reduced plan from 5 tasks to 3',
+      ]),
+      strategy(2, '2026-10-29', 4, [
+        'Moved study to 09:00-12:00 (3 of 3 done there)',
+      ]),
+      strategy(1, '2026-10-28', 5, []),
+    ];
+    final env = Env(
+      profile: {
+        'wake': '07:00',
+        'sleep': '23:30',
+        'apps': <String>['Instagram'],
+        'name': 'Mohamed',
+      },
+      strategies: history,
+      experimentResults: results(),
+      hour: 21,
+    );
+    await env.services.experimentSettings.save(
+      const ExperimentSettings(enabled: true),
+    );
+    await t.pumpWidget(app(HomePage(services: env.services)));
+    await t.pumpAndSettle();
+    await t.drag(find.byType(CustomScrollView), const Offset(0, -1150));
+    await shot(t, '13_learning');
+    await t.pumpWidget(
+      app(
+        StrategyPage(history: [for (final h in history) Strategy.fromJson(h)]),
+      ),
+    );
+    await t.pumpAndSettle();
+    await shot(t, '14_strategy_page');
+    await t.pumpWidget(
+      app(
+        const Scaffold(
+          body: Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(
+              child: StrategyUpdateCard(
+                update: StrategyUpdate(
+                  version: 3,
+                  changes: [
+                    'Cut Instagram limit 30 to 20',
+                    'Reduced plan from 5 tasks to 3',
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+    await shot(t, '15_strategy_updated');
+    await t.pumpWidget(app(LabNotebookPage(results: ExperimentResults.fromJson(results()))));
+    await t.pumpAndSettle();
+    await shot(t, '16_lab_notebook');
   });
 }

@@ -48,12 +48,12 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(sys.content!, /today: 2026-10-26/);
   assert.match(sys.content!, /plan_date: 2026-10-27/);
   assert.match(sys.content!, /user_language: fr/);
-  assert.deepEqual(names(planning.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document']);
+  assert.deepEqual(names(planning.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document', 'save_settings', 'get_strategy', 'get_experiment_results', 'get_calendar', 'set_session_rule', 'remove_session_rule']);
 
   const execute = setup([textReply('ok')]);
   await execute.run(base({ mode: 'execute' }));
   assert.match(last(execute.net).messages[0].content!, /Mode: execute/);
-  assert.deepEqual(names(execute.net), ['get_plan', 'create_task', 'set_app_limit', 'schedule_alarm']);
+  assert.deepEqual(names(execute.net), ['get_plan', 'save_settings', 'get_strategy', 'get_calendar', 'set_session_rule', 'remove_session_rule', 'create_task', 'set_app_limit', 'schedule_alarm']);
 
   const review = setup([textReply('ok')]);
   await review.run(base({ mode: 'review', report: { done: ['Study'], missed: ['Gym'] } }));
@@ -61,7 +61,9 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(content, /Mode: review/);
   assert.match(content, /review_date: 2026-10-26/);
   assert.match(content, /tasks_missed: \["Gym"\]/);
-  assert.deepEqual(names(review.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document']);
+  assert.deepEqual(names(review.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document', 'save_settings', 'get_strategy', 'save_strategy', 'get_experiment_results', 'get_calendar', 'set_session_rule', 'remove_session_rule']);
+  assert.match(content, /STRATEGY MEMORY/);
+  assert.doesNotMatch(content, /Current strategy:/, 'review reads the strategy itself');
 });
 
 test('the conversation is remembered: the second request sends only the new message and the model sees all of it', async () => {
@@ -359,4 +361,24 @@ test('the reply comes back as the text on screen and the line to say aloud, apar
   const plain = setup([textReply('Just text.')]);
   const p = await plain.run(base());
   assert.equal('spoken' in p, false);
+});
+
+test('the morning run can apply a whole plan in one round: many device calls, all results accepted', async () => {
+  const calls: [string, unknown, string][] = [
+    ['get_calendar', { date: '2026-10-26' }, 'c0'],
+    ...Array.from({ length: 8 }, (_, i) => ['create_task', { title: `Task ${i}`, minutes: 30 }, `t${i}`] as [string, unknown, string]),
+    ...Array.from({ length: 3 }, (_, i) => ['set_app_limit', { app: `App ${i}`, minutes_per_day: 30 }, `l${i}`] as [string, unknown, string]),
+    ...Array.from({ length: 8 }, (_, i) => ['schedule_alarm', { time: `1${i}:00`, message: 'Soon' }, `a${i}`] as [string, unknown, string]),
+  ];
+  const { run } = setup([callsReply(...calls), textReply('Your day is set up.')]);
+  const first = await run(base({ mode: 'execute', date: '2026-10-26', input: { type: 'user', text: "Apply today's plan." } }));
+  assert.equal(first.type, 'tool_calls');
+  assert.equal(first.type === 'tool_calls' && first.calls.length, 20);
+  const done = await run(base({
+    mode: 'execute',
+    date: '2026-10-26',
+    conversation_id: first.conversation_id,
+    input: { type: 'tool_results', results: calls.map(([, , id]) => ({ tool_call_id: id, content: '{"ok":true}' })) },
+  }));
+  assert.equal(done.type === 'text' && done.text, 'Your day is set up.');
 });

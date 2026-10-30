@@ -182,3 +182,43 @@ test('attach deletes the original once its text is saved, unless KEEP_ORIGINALS=
   assert.ok(keep.uploads.has(`${USER}/notes.txt`), 'kept on request');
   assert.equal(keep.documents.size, 1);
 });
+
+// ---------- Lify's voice (Orpheus on Baseten) ----------
+
+import { pcmToWav, speakableText, synthesize, TTS, ttsConfigFromEnv } from '../supabase/functions/_shared/tts.ts';
+
+const TTS_ENV = { ...ENV, TTS_URL: 'https://model-abc.api.baseten.co/environments/production/predict', OPEN_API_KEY: 'bt-key' };
+
+test('speak: Orpheus gets the cleaned text and the Baseten key; raw PCM comes back as a playable WAV', async () => {
+  const store = new MemoryStore();
+  const pcm = new Uint8Array(48_000); // one second of 24 kHz 16-bit mono
+  const { res, calls } = http({ action: 'speak', text: '**Jake**, 40 min on TikTok 😅 <chuckle> https://x.y/z' }, store, () => new Response(pcm), TTS_ENV);
+  const r = await res;
+  assert.equal(r.status, 200);
+  const out = await r.json();
+  assert.equal(out.format, 'wav');
+  assert.equal(out.voice, 'tara');
+  const wav = Uint8Array.from(atob(out.audio), (c) => c.charCodeAt(0));
+  assert.deepEqual(parseWav(wav), { sampleRate: 24000, durationMs: 1000 });
+  assert.equal(calls[0].url, TTS_ENV.TTS_URL);
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, 'Api-Key bt-key');
+  const sent = JSON.parse(calls[0].init.body as string);
+  assert.equal(sent.prompt, 'Jake, 40 min on TikTok <chuckle>');
+  assert.equal(sent.voice, 'tara');
+});
+
+test('speak: not set up means the phone voice (501), a WAV answer is passed through, failures are model errors', async () => {
+  const store = new MemoryStore();
+  assert.equal((await http({ action: 'speak', text: 'hi' }, store, () => new Response('x')).res).status, 501);
+  assert.equal(await code(http({ action: 'speak', text: '  ' }, store, () => new Response('x'), TTS_ENV).res), 'bad_text');
+  const wav = pcmToWav(new Uint8Array(4800));
+  assert.deepEqual(await synthesize(ttsConfigFromEnv((n) => (TTS_ENV as Record<string, string>)[n])!, 'hi', (async () => new Response(wav)) as unknown as typeof fetch), wav);
+  assert.equal(await code(http({ action: 'speak', text: 'hi' }, store, () => new Response('no', { status: 503 }), TTS_ENV).res), 'agent_upstream_status');
+  assert.equal(ttsConfigFromEnv((n) => ({ ...TTS_ENV, TTS_VOICE: 'Leo' } as Record<string, string>)[n])!.voice, 'leo');
+  assert.equal(ttsConfigFromEnv((n) => ({ ...TTS_ENV, TTS_VOICE: 'robot' } as Record<string, string>)[n])!.voice, 'tara');
+});
+
+test('long answers are cut at a sentence end', () => {
+  const t = speakableText('This is a sentence. '.repeat(60));
+  assert.ok(t.length <= TTS.maxChars && t.endsWith('.'));
+});

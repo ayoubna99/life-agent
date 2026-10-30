@@ -33,9 +33,12 @@ class UsageReader(context: Context) {
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
             // 1 = an activity came to the front (ACTIVITY_RESUMED / MOVE_TO_FOREGROUND), 2 = it went to the back.
+            // 18 = KEYGUARD_HIDDEN (unlocked), 16 = SCREEN_NON_INTERACTIVE and 17 = KEYGUARD_SHOWN (locked again).
             val type = when (e.eventType) {
                 1 -> UsageEventType.FOREGROUND
                 2 -> UsageEventType.BACKGROUND
+                18 -> UsageEventType.UNLOCK
+                16, 17 -> UsageEventType.LOCK
                 else -> UsageEventType.OTHER
             }
             if (type != UsageEventType.OTHER) out.add(UsageEvent(e.timeStamp, e.packageName, type))

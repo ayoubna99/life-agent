@@ -15,12 +15,26 @@ class FakeAlarms implements AlarmScheduler {
     required DateTime at,
     required String message,
     bool card = false,
+    String? title,
+    String? open,
   }) async {
     if (allow) {
       set.add((at, message));
       scheduled.add(id);
     }
     return allow;
+  }
+
+  final List<(int, int, String)> phone = [];
+
+  @override
+  Future<bool> phoneAlarm({
+    required int hour,
+    required int minute,
+    required String message,
+  }) async {
+    phone.add((hour, minute, message));
+    return true;
   }
 
   @override

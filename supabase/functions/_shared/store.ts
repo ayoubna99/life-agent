@@ -6,6 +6,9 @@ import type { PlanData } from './plan.ts';
 import { toHHMM, toMinutes } from './profile.ts';
 import type { Profile } from './profile.ts';
 import type { Mode } from './prompt.ts';
+import type { Strategy, StrategyData } from './strategy.ts';
+import type { ExperimentEvent } from './experiments.ts';
+import type { PhoneNight } from './nights.ts';
 
 export class StoreError extends Error {
   readonly status: number;
@@ -54,6 +57,20 @@ export interface Store {
   deleteUpload(path: string): Promise<void>;
   saveDocument(doc: NewDocument): Promise<string>;
   getDocument(id: string): Promise<StoredDocument | null>;
+  /** The newest strategy version, or null before the first review. */
+  getStrategy(): Promise<Strategy | null>;
+  /** Strategy versions, newest first. */
+  listStrategies(limit: number): Promise<Strategy[]>;
+  /** Stores a NEW version (the old ones stay) and returns its number. */
+  saveStrategy(forDate: string, data: StrategyData): Promise<number>;
+  /** Stores experiment results from the phone; an event already stored (same id) is ignored. */
+  saveExperiments(events: ExperimentEvent[]): Promise<void>;
+  /** Experiment results from `since` (YYYY-MM-DD) on. */
+  getExperiments(since: string): Promise<ExperimentEvent[]>;
+  /** Phone-down times, one per night (replacing what was there for that night). */
+  upsertNights(nights: PhoneNight[]): Promise<void>;
+  /** The last 7 nights up to and including `upTo` (YYYY-MM-DD), newest first. */
+  getNights(upTo: string): Promise<PhoneNight[]>;
 }
 
 export interface NewDocument {
@@ -295,5 +312,93 @@ export class RestStore implements Store {
   async getDocument(id: string): Promise<StoredDocument | null> {
     const rows = (await this.rest('document', `documents?id=eq.${encodeURIComponent(id)}&select=id,name,pages,text,kind&limit=1`)) as StoredDocument[];
     return rows[0] ?? null;
+  }
+
+  async getStrategy(): Promise<Strategy | null> {
+    return (await this.listStrategies(1))[0] ?? null;
+  }
+
+  async listStrategies(limit: number): Promise<Strategy[]> {
+    const rows = (await this.rest(
+      'strategy',
+      `strategies?select=version,for_date,strategy,created_at&order=version.desc&limit=${Math.max(1, Math.min(limit, 60))}`,
+    )) as { version: number; for_date: string; strategy: StrategyData; created_at: string }[];
+    return rows.map((r) => ({ ...r.strategy, version: r.version, for_date: r.for_date, created_at: r.created_at }));
+  }
+
+  async saveStrategy(forDate: string, data: StrategyData): Promise<number> {
+    // The next number after the newest; the unique (user_id, version) key refuses a second writer with the same number.
+    const version = ((await this.getStrategy())?.version ?? 0) + 1;
+    await this.rest('strategy', 'strategies', {
+      method: 'POST',
+      json: { user_id: this.c.userId, version, for_date: forDate, strategy: data },
+      headers: { Prefer: 'return=minimal' },
+    });
+    return version;
+  }
+
+  async saveExperiments(events: ExperimentEvent[]): Promise<void> {
+    if (events.length === 0) return;
+    await this.rest('experiments', 'experiments?on_conflict=user_id,event_id', {
+      method: 'POST',
+      json: events.map((e) => ({
+        user_id: this.c.userId,
+        event_id: e.id,
+        day: e.day,
+        local_time: e.time,
+        app: e.app,
+        arm: e.arm,
+        explore: e.explore,
+        reason: e.reason,
+        left_app: e.left,
+        seconds_after: e.seconds_after,
+        window_seconds: e.window_seconds,
+        demo: e.demo,
+        propensity: e.propensity ?? null,
+        context: e.context ?? null,
+        message: e.message ?? null,
+      })),
+      headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
+    });
+  }
+
+  async getExperiments(since: string): Promise<ExperimentEvent[]> {
+    const rows = (await this.rest(
+      'experiments',
+      `experiments?day=gte.${encodeURIComponent(since)}&select=event_id,day,local_time,app,arm,explore,reason,left_app,seconds_after,window_seconds,demo,propensity,context,message&order=id.asc&limit=1000`,
+    )) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: r.event_id as string,
+      day: r.day as string,
+      time: r.local_time as string,
+      app: r.app as string,
+      arm: r.arm as ExperimentEvent['arm'],
+      explore: r.explore as boolean,
+      reason: r.reason as ExperimentEvent['reason'],
+      left: r.left_app as boolean,
+      seconds_after: r.seconds_after as number,
+      window_seconds: r.window_seconds as number,
+      demo: r.demo as boolean,
+      ...(typeof r.propensity === 'number' ? { propensity: r.propensity } : {}),
+      ...(typeof r.context === 'string' ? { context: r.context as ExperimentEvent['context'] } : {}),
+      ...(typeof r.message === 'string' ? { message: r.message } : {}),
+    }));
+  }
+
+  async upsertNights(nights: PhoneNight[]): Promise<void> {
+    if (nights.length === 0) return;
+    await this.rest('nights', 'phone_nights?on_conflict=user_id,night', {
+      method: 'POST',
+      json: nights.map((n) => ({ user_id: this.c.userId, night: n.night, down_at: n.down, up_at: n.up ?? null })),
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    });
+  }
+
+  async getNights(upTo: string): Promise<PhoneNight[]> {
+    const rows = (await this.rest(
+      'nights',
+      `phone_nights?night=lte.${encodeURIComponent(upTo)}&select=night,down_at,up_at&order=night.desc&limit=7`,
+    )) as { night: string; down_at: string; up_at: string | null }[];
+    return rows.map((r) => ({ night: r.night, down: r.down_at, ...(r.up_at ? { up: r.up_at } : {}) }));
   }
 }

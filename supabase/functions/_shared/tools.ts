@@ -13,6 +13,9 @@ import type { Store } from './store.ts';
 import type { MuseConfig } from './muse.ts';
 import { searchWithMuse } from './search.ts';
 import { fetchPage, WEB, WebError } from './web.ts';
+import { validateStrategy } from './strategy.ts';
+import { validateProfile } from './profile.ts';
+import { summarizeExperiments } from './experiments.ts';
 
 export interface ToolEnv {
   store: Store;
@@ -46,6 +49,13 @@ export interface ToolOutcome {
   planSaved?: boolean;
   /** Something the phone can show the user (a picture the agent made). */
   artifact?: Artifact;
+  /** A new strategy version: the app shows its changes as the "Strategy updated" card. */
+  strategy?: StrategyUpdate;
+}
+
+export interface StrategyUpdate {
+  version: number;
+  changes: string[];
 }
 
 const json = (v: unknown): string => JSON.stringify(v);
@@ -194,6 +204,35 @@ export async function runServerTool(name: string, args: Record<string, unknown>,
       const part = slice(doc.text, args.offset);
       if (typeof part === 'string') return problem(part);
       return { content: json({ name: doc.name, pages: doc.pages, ...part, note: UNTRUSTED }) };
+    }
+
+    case 'save_settings': {
+      const checked = validateProfile(args);
+      if (!checked.ok) return problem(`Nothing saved: ${checked.error}. Send wake/sleep as HH:MM, focus as text, apps as a list of at most 8 names.`);
+      await env.store.saveProfile(checked.patch);
+      return { content: json({ saved: Object.keys(checked.patch) }) };
+    }
+
+    case 'get_strategy': {
+      const current = await env.store.getStrategy();
+      return { content: json(current ? { strategy: current } : { strategy: null, note: 'No strategy yet: this would be the first version.' }) };
+    }
+
+    case 'save_strategy': {
+      const checked = validateStrategy(args);
+      if (!checked.ok) return problem(checked.error);
+      // The day always comes from the app's context, never from the model.
+      const version = await env.store.saveStrategy(env.planDate, checked.strategy);
+      const changes = checked.strategy.changes;
+      return { content: json({ saved: true, version, for_date: env.planDate, changes }), strategy: { version, changes } };
+    }
+
+    case 'get_experiment_results': {
+      const days = args.days === undefined ? 7 : args.days;
+      if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > 14) return problem('days must be a whole number from 1 to 14.');
+      const events = await env.store.getExperiments(addDays(env.today, -(days - 1)));
+      if (events.length === 0) return { content: json({ events: 0, note: 'No limit hits recorded yet (or the user has not turned on experiments). Say nothing about experiments.' }) };
+      return { content: json(summarizeExperiments(events)) };
     }
 
     default:

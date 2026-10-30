@@ -21,7 +21,11 @@ class VoiceSettings {
     this.voiceName,
     this.locale,
     this.rate = 0.5,
+    this.natural = false,
   });
+
+  /// Lify's own voice (Orpheus, a natural voice served from Baseten) instead of the phone's. Falls back to the phone.
+  final bool natural;
 
   /// Read the agent's answers aloud after the person spoke to it.
   final bool enabled;
@@ -36,12 +40,14 @@ class VoiceSettings {
     String? voiceName,
     String? locale,
     double? rate,
+    bool? natural,
     bool clearVoice = false,
   }) => VoiceSettings(
     enabled: enabled ?? this.enabled,
     voiceName: clearVoice ? null : (voiceName ?? this.voiceName),
     locale: clearVoice ? null : (locale ?? this.locale),
     rate: rate ?? this.rate,
+    natural: natural ?? this.natural,
   );
 }
 
@@ -69,6 +75,7 @@ class PrefsVoiceSettingsStore implements VoiceSettingsStore {
       voiceName: p.getString('life.voice.name'),
       locale: p.getString('life.voice.locale'),
       rate: (p.getDouble('life.voice.rate') ?? 0.5).clamp(0.2, 1.0),
+      natural: p.getBool('life.voice.natural') ?? false,
     );
   }
 
@@ -77,6 +84,7 @@ class PrefsVoiceSettingsStore implements VoiceSettingsStore {
     final p = await SharedPreferences.getInstance();
     await p.setBool('life.voice.enabled', s.enabled);
     await p.setDouble('life.voice.rate', s.rate);
+    await p.setBool('life.voice.natural', s.natural);
     if (s.voiceName == null) {
       await p.remove('life.voice.name');
       await p.remove('life.voice.locale');
@@ -86,6 +94,21 @@ class PrefsVoiceSettingsStore implements VoiceSettingsStore {
     }
   }
 }
+
+/// How "Lify" is said: like "Life" with an "ee" at the end (LIFE-ee). Speech engines read the written name as "Liffy",
+/// so the voice gets this spelling; the screen keeps "Lify".
+const lifySpoken = 'Lifey';
+
+String withSpokenName(String text) =>
+    text.replaceAll(RegExp(r'\bLify\b', caseSensitive: false), lifySpoken);
+
+/// Google's English voices that sound most like a person, best first.
+const _natural = [
+  'en-us-x-sfg-network',
+  'en-us-x-tpf-network',
+  'en-us-x-iog-network',
+  'en-gb-x-gba-network',
+];
 
 /// The voices that speak the person's language, best first.
 List<SpeechVoice> voicesFor(List<SpeechVoice> all, String languageCode) {
@@ -98,6 +121,10 @@ List<SpeechVoice> voicesFor(List<SpeechVoice> all, String languageCode) {
   ];
   int rank(SpeechVoice v) {
     final n = v.name.toLowerCase();
+    // Google's most natural English voices (warm, close to a real person), when installed
+    for (final (i, best) in _natural.indexed) {
+      if (n.startsWith(best)) return -_natural.length + i;
+    }
     if (n.contains('network') ||
         n.contains('neural') ||
         n.contains('premium') ||

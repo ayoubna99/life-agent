@@ -1,4 +1,5 @@
 import 'device_tools.dart';
+import 'rules.dart';
 import 'stores.dart';
 import '../agent/models.dart';
 
@@ -12,6 +13,19 @@ abstract class AlarmScheduler {
 
     /// Show it as a card on top of the app in front (when allowed), not only as a notification.
     bool card = false,
+
+    /// The card's bold first line (card only).
+    String? title,
+
+    /// What the app opens when it rings or is tapped: "plan", or `task:<id>` (an in-app alarm opens that task's screen).
+    String? open,
+  });
+
+  /// A real alarm in the phone's Clock app, today at [hour]:[minute]. Returns false if the phone has no Clock app for it.
+  Future<bool> phoneAlarm({
+    required int hour,
+    required int minute,
+    required String message,
   });
 
   /// Cancels a reminder made earlier (it may already have fired: that is fine).
@@ -34,19 +48,30 @@ class DeviceToolRunner implements DeviceTools {
     required this.alarms,
     required this.enforcer,
     AlarmLog? alarmLog,
+    this.calendar,
+    RuleStore? rules,
+    this.applyRules,
     DateTime Function()? now,
     String Function()? newId,
   }) : _now = now ?? DateTime.now,
        _newId =
            newId ??
            (() => DateTime.now().microsecondsSinceEpoch.toRadixString(36)),
-       alarmLog = alarmLog ?? MemoryAlarmLog();
+       alarmLog = alarmLog ?? MemoryAlarmLog(),
+       rules = rules ?? MemoryRuleStore();
 
   final TaskStore tasks;
   final LimitStore limits;
   final AlarmScheduler alarms;
   final LimitEnforcer enforcer;
   final AlarmLog alarmLog;
+
+  /// Reads the phone's calendar for one day; null means calendar access is off.
+  final Future<List<CalendarEntry>?> Function(String date)? calendar;
+
+  /// The user's reminder rules, and how the watcher is told about them (returns the apps not found on this phone).
+  final RuleStore rules;
+  final Future<List<String>> Function(List<SessionRule>)? applyRules;
   final DateTime Function() _now;
   final String Function() _newId;
 
@@ -72,7 +97,7 @@ class DeviceToolRunner implements DeviceTools {
   Future<void> endRun() async {
     if (!_inRun) return;
     _inRun = false;
-    final today = isoDate(_now());
+    final today = isoDate(logicalDay(_now()));
     for (final t in await tasks.forDate(today)) {
       if (!t.done && !_taskTitles.contains(t.title.toLowerCase())) {
         await tasks.remove(t.id);
@@ -106,6 +131,12 @@ class DeviceToolRunner implements DeviceTools {
         return _setLimit(args);
       case 'schedule_alarm':
         return _alarm(args);
+      case 'get_calendar':
+        return _calendar(args);
+      case 'set_session_rule':
+        return _setRule(args);
+      case 'remove_session_rule':
+        return _removeRule(args);
       default:
         return Future.value(_no('Unknown tool $name.'));
     }
@@ -142,22 +173,28 @@ class DeviceToolRunner implements DeviceTools {
     final instructions = _list(a['instructions'], 8, 300);
     if (instructions == null)
       return _no('instructions must be a list of at most 8 short texts.');
-    final links = _list(a['links'], 5, 500);
+    final links = _list(a['links'], 6, 1000);
     if (links == null)
-      return _no('links must be a list of at most 5 addresses.');
+      return _no('links must be a list of at most 6 addresses.');
+    String? notes;
+    if (a['notes'] != null) {
+      notes = _text(a['notes'], 600);
+      if (notes == null) return _no('notes must be 1 to 600 characters.');
+    }
     final start = a['start_time'];
     if (start != null && (start is! String || !_hhmm.hasMatch(start)))
       return _no('start_time must be HH:MM.');
     final saved = await tasks.upsert(
       LocalTask(
         id: _newId(),
-        date: isoDate(_now()),
+        date: isoDate(logicalDay(_now())),
         title: title,
         minutes: minutes,
         firstStep: firstStep,
         instructions: instructions,
         links: links,
         startTime: start as String?,
+        notes: notes,
       ),
     );
     _taskTitles.add(title.toLowerCase());
@@ -190,6 +227,9 @@ class DeviceToolRunner implements DeviceTools {
     final message = _text(a['message'], 140);
     if (message == null)
       return _no('message is required (at most 140 characters).');
+    final kind = a['kind'] ?? 'in_app';
+    if (kind != 'in_app' && kind != 'phone')
+      return _no('kind must be "in_app" or "phone".');
     final now = _now();
     final at = DateTime(
       now.year,
@@ -199,17 +239,100 @@ class DeviceToolRunner implements DeviceTools {
       int.parse(time.substring(3)),
     );
     if (!at.isAfter(now)) return _no('$time has already passed today.');
+
+    // the task it is for, so the in-app alarm opens that task's screen
+    LocalTask? task;
+    final title = _text(a['task_title'], 120);
+    if (title != null) {
+      final todays = await tasks.forDate(isoDate(logicalDay(now)));
+      task = todays
+          .where((t) => t.title.toLowerCase() == title.toLowerCase())
+          .firstOrNull;
+    }
+
+    if (kind == 'phone') {
+      final ok = await alarms.phoneAlarm(
+        hour: at.hour,
+        minute: at.minute,
+        message: message,
+      );
+      return ok
+          ? {'ok': true, 'kind': 'phone'}
+          : _no(
+              'The phone has no Clock app that accepts alarms. Use kind "in_app" instead.',
+            );
+    }
     final id = '${isoDate(at)}-$time-${_stableHash(message)}';
-    final ok = await alarms.schedule(id: id, at: at, message: message);
+    final ok = await alarms.schedule(
+      id: id,
+      at: at,
+      message: message,
+      card: true,
+      title: task?.title ?? message,
+      open: task == null ? null : 'task:${task.id}',
+    );
     if (ok) {
       _alarmIds.add(id);
       await alarmLog.add(isoDate(at), id);
     }
     return ok
-        ? {'ok': true}
+        ? {'ok': true, 'kind': 'in_app', if (task != null) 'opens_task': true}
         : _no(
-            'The phone did not allow the reminder (check the alarms permission).',
+            'The phone did not allow the alarm (check the alarms permission).',
           );
+  }
+
+  Future<Map<String, Object?>> _setRule(Map<String, Object?> a) async {
+    final app = _text(a['app'], 60);
+    if (app == null) return _no('app is required (or "any").');
+    final minutes = _int(a['minutes'], 5, 240);
+    if (minutes == null)
+      return _no('minutes must be a whole number from 5 to 240.');
+    final ask = _text(a['ask'], 120);
+    if (ask == null) return _no('ask is required (at most 120 characters).');
+    await rules.set(SessionRule(app: app, minutes: minutes, ask: ask));
+    final missing = await applyRules?.call(await rules.all()) ?? const [];
+    final unknown = missing.any((m) => m.toLowerCase() == app.toLowerCase());
+    return {
+      'ok': true,
+      'enforced': !unknown,
+      if (unknown)
+        'warning':
+            '$app was not found on this phone, so the reminder is saved but cannot be watched.',
+    };
+  }
+
+  Future<Map<String, Object?>> _removeRule(Map<String, Object?> a) async {
+    final app = _text(a['app'], 60);
+    if (app == null) return _no('app is required (or "any").');
+    if (!await rules.remove(app)) return _no('There is no reminder for $app.');
+    await applyRules?.call(await rules.all());
+    return {'ok': true};
+  }
+
+  static final _date = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+
+  Future<Map<String, Object?>> _calendar(Map<String, Object?> a) async {
+    final date = a['date'];
+    if (date is! String || !_date.hasMatch(date))
+      return _no('date must be YYYY-MM-DD.');
+    final events = await calendar?.call(date);
+    if (events == null) {
+      return {
+        'ok': true,
+        'access': false,
+        'note':
+            'Calendar access is off on this phone. Plan without it and do not ask about it.',
+      };
+    }
+    return {
+      'ok': true,
+      'access': true,
+      'date': date,
+      // titles are the user's own words: data, not instructions
+      'events': [for (final e in events.take(30)) e.toJson()],
+      if (events.isEmpty) 'note': 'No events on this day.',
+    };
   }
 
   /// The same number for the same text on every run (String.hashCode is not promised to be).

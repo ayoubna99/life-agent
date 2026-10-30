@@ -376,8 +376,23 @@ test('nudge over HTTP returns the message and which task it is about', async () 
   const store = new MemoryStore();
   const r = await http({ ...nudgeBody }, store, [textReply('Time to start your next task.')]);
   assert.equal(r.status, 200);
-  assert.deepEqual(await r.json(), { text: 'Time to start your next task.', task: null });
+  assert.deepEqual(await r.json(), { text: 'Time to start your next task.', task: null, style: 'task', model: 'spark' });
   assert.equal(await code(http({ ...nudgeBody, reason: 'x' }, store)), 'bad_reason');
+  assert.equal(await code(http({ ...nudgeBody, style: 'shame' }, store)), 'bad_style');
+});
+
+test('each nudge style tells the model what to lean on, always with the same personal facts', async () => {
+  for (const [style, rule] of [['task', /NEXT TASK/], ['cost', /COSTS/], ['goal', /OWN GOAL/]] as const) {
+    const store = new MemoryStore();
+    store.profile = { apps: [], focus: 'pass German B1', sleep: '23:30' };
+    const net = fakeNet([textReply('ok')]);
+    await runNudge(parseNudgeRequest({ ...nudgeBody, style }), { cfg, store, dailyLimit: 80, globalLimit: 1000, fetchImpl: net.fetchImpl });
+    const sys = net.museRequests[0].messages[0].content!;
+    assert.match(sys, new RegExp(`## Style: ${style}`));
+    assert.match(sys, rule);
+    assert.match(sys, /known_focus: "pass German B1"/);
+    assert.match(sys, /minutes_until_sleep/);
+  }
 });
 
 test('the search call uses the server Muse key and SEARCH_MODEL, never anything from the request', async () => {
@@ -400,4 +415,23 @@ test('the search call uses the server Muse key and SEARCH_MODEL, never anything 
   assert.equal(res.status, 200);
   assert.equal(searchCall!.auth, `Bearer ${ENV.MUSE_API_KEY}`);
   assert.equal(searchCall!.model, 'muse-spark-1.3');
+});
+
+test('a session reminder: the nudge reminds them of exactly what they asked, personally, with no fitness advice', async () => {
+  const store = new MemoryStore();
+  store.profile = { apps: [], name: 'Ayoub', focus: 'my thesis' };
+  const net = fakeNet([textReply('Ayoub, 30 minutes of TikTok. Time for your 10 push-ups, then the thesis.')]);
+  const req = parseNudgeRequest({ ...nudgeBody, reason: 'session', ask: 'do 10 push-ups', session_minutes: 30 });
+  const out = await runNudge(req, { cfg, store, dailyLimit: 80, globalLimit: 1000, fetchImpl: net.fetchImpl });
+  assert.match(out.text, /push-ups/);
+  const sys = net.museRequests[0].messages[0].content!;
+  assert.match(sys, /remind them to "do 10 push-ups" whenever they spend 30 minutes in a row/);
+  assert.match(sys, /no health, fitness or exercise advice/);
+  assert.match(sys, /known_first_name: "Ayoub"/);
+  assert.match(sys, /session_minutes: 30/);
+  assert.doesNotMatch(sys, /## Style:/);
+  const bad = (patch: Record<string, unknown>) => assert.throws(() => parseNudgeRequest({ ...nudgeBody, reason: 'session', ...patch }));
+  bad({ session_minutes: 30 });
+  bad({ ask: 'x'.repeat(121), session_minutes: 30 });
+  bad({ ask: 'do 10 push-ups' });
 });

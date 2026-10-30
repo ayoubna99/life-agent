@@ -67,9 +67,4 @@ class NudgePolicyTest {
         assertEquals(mapOf("$day|a|limit" to 2L), kept)
     }
 
-    @Test fun fallbackTextsAreShortAndHonest() {
-        assertEquals("You have used 24 of your 30 minutes on TikTok today.", NudgePolicy.fallbackText(NudgeReason.APPROACHING, "TikTok", 24, 30))
-        assertEquals("You reached your 30 minute limit on TikTok. Time to do something else.", NudgePolicy.fallbackText(NudgeReason.LIMIT, "TikTok", 30, 30))
-        assertEquals("You are 41 minutes into TikTok today, past your 30 minute limit.", NudgePolicy.fallbackText(NudgeReason.OVER, "TikTok", 41, 30))
-    }
 }

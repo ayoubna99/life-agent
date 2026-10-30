@@ -7,6 +7,11 @@ export interface PlanTask {
   instructions?: string[];
   links?: string[];
   start_time?: string;
+  /** What was decided in the chat about this task, so the task screen has everything when its time comes. */
+  notes?: string;
+  /** How its reminder rings: "phone" = a real alarm in the phone's Clock app (away from the screen: gym, prayer,
+   *  leaving home), "in_app" = Life opens this task's screen with its links and material (reading, emails, study). */
+  alarm?: 'in_app' | 'phone';
 }
 export interface PlanLimit {
   app: string;
@@ -65,10 +70,19 @@ export function validatePlan(raw: unknown): { ok: true; plan: PlanData } | { ok:
       task.instructions = lines as string[];
     }
     if (t.links !== undefined) {
-      if (!Array.isArray(t.links) || t.links.length > 5) return { ok: false, error: `${n}.links must be a list of at most 5 links.` };
-      const links = t.links.map((l) => text(l, 300));
-      if (links.includes(null)) return { ok: false, error: `${n}.links must be 1 to 300 characters.` };
+      if (!Array.isArray(t.links) || t.links.length > 6) return { ok: false, error: `${n}.links must be a list of at most 6 links.` };
+      const links = t.links.map((l) => text(l, 1000)); // signed links to our own files are long
+      if (links.includes(null)) return { ok: false, error: `${n}.links must be 1 to 1000 characters.` };
       task.links = links as string[];
+    }
+    if (t.notes !== undefined) {
+      const v = text(t.notes, 600);
+      if (!v) return { ok: false, error: `${n}.notes must be 1 to 600 characters.` };
+      task.notes = v;
+    }
+    if (t.alarm !== undefined) {
+      if (t.alarm !== 'in_app' && t.alarm !== 'phone') return { ok: false, error: `${n}.alarm must be "in_app" or "phone".` };
+      task.alarm = t.alarm;
     }
     tasks.push(task);
   }

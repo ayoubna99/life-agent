@@ -14,6 +14,7 @@ class LocalTask {
     this.links = const [],
     this.startTime,
     this.done = false,
+    this.notes,
   });
 
   final String id;
@@ -26,6 +27,9 @@ class LocalTask {
   final String? startTime; // HH:MM
   final bool done;
 
+  /// What was decided in the chat about this task (shown on its screen).
+  final String? notes;
+
   LocalTask copyWith({bool? done}) => LocalTask(
     id: id,
     date: date,
@@ -36,6 +40,7 @@ class LocalTask {
     links: links,
     startTime: startTime,
     done: done ?? this.done,
+    notes: notes,
   );
 
   Map<String, Object?> toJson() => {
@@ -48,6 +53,7 @@ class LocalTask {
     'links': links,
     if (startTime != null) 'start_time': startTime,
     'done': done,
+    if (notes != null) 'notes': notes,
   };
 
   factory LocalTask.fromJson(Map<String, Object?> j) => LocalTask(
@@ -62,6 +68,7 @@ class LocalTask {
     links: [for (final s in (j['links'] as List? ?? const [])) s as String],
     startTime: j['start_time'] as String?,
     done: j['done'] == true,
+    notes: j['notes'] as String?,
   );
 }
 

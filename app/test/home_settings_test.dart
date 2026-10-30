@@ -18,6 +18,8 @@ class Env {
     this.todayPlan,
     this.hour = 20,
     this.offline = false,
+    this.strategies = const [],
+    this.experimentResults,
   }) {
     var chats = 0;
     server = FakeServer((r) {
@@ -36,6 +38,30 @@ class Env {
           });
         case 'usage':
           return jsonResponse({'saved': 1});
+        case 'nudge':
+          nudges.add(r.json);
+          return jsonResponse({
+            'text':
+                'Mo, 45 minutes of ${r.json['app']}. Your German sheet is waiting.',
+            'task': null,
+            'style': 'task',
+          });
+        case 'evening':
+          return jsonResponse({
+            'planned': false,
+            'text': 'Hey Mo, let\'s make our plans for tomorrow.',
+          });
+        case 'strategy':
+          return jsonResponse({
+            'strategy': strategies.isEmpty ? null : strategies.first,
+            'history': strategies,
+          });
+        case 'experiments':
+          return jsonResponse({
+            'results':
+                experimentResults ??
+                {'events': 0, 'days': 0, 'arms': <Object?>[]},
+          });
         case 'chat':
           chats++;
           return jsonResponse(text('Reply $chats'));
@@ -60,6 +86,9 @@ class Env {
 
   final int hour;
   final bool offline;
+  final List<Map<String, Object?>> strategies;
+  final Map<String, Object?>? experimentResults;
+  final List<Map<String, Object?>> nudges = [];
   final Map<String, Object?>? todayPlan;
   late final FakeServer server;
   late final AppServices services;
@@ -260,8 +289,17 @@ void main() {
     },
   );
 
+  const german = LocalTask(
+    id: '1',
+    date: '2026-10-27',
+    title: 'Study German',
+    minutes: 40,
+    startTime: '10:00',
+    firstStep: 'Open the sheet',
+  );
+
   testWidgets(
-    '"Next task (test)" schedules a reminder for the next task in 10 seconds and says to leave the app',
+    '"Task alarm (test)" rings the next task\'s in-app alarm in 10 seconds, which opens its screen',
     (t) async {
       t.view.physicalSize = const Size(900, 3200);
       t.view.devicePixelRatio = 1;
@@ -270,16 +308,7 @@ void main() {
         profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
         hour: 9,
       );
-      await env.tasks.upsert(
-        const LocalTask(
-          id: '1',
-          date: '2026-10-27',
-          title: 'Study German',
-          minutes: 40,
-          startTime: '10:00',
-          firstStep: 'Open the sheet',
-        ),
-      );
+      await env.tasks.upsert(german);
       await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('test-next')));
@@ -287,26 +316,19 @@ void main() {
       await t.tap(find.byKey(const Key('test-next')));
       await t.pump(const Duration(milliseconds: 200));
       await t.pump(const Duration(milliseconds: 200));
-      expect(env.native.alarms, hasLength(1));
       final (id, at, message) = env.native.alarms.single;
       expect(id, 'test-next');
-      expect(
-        message,
-        'Next task: Study German (40 min). First step: Open the sheet',
-      );
+      expect(message, 'It\'s time: Study German');
+      expect(env.native.alarmCards.single, isTrue);
+      expect(env.native.alarmOpens.single, 'task:1');
       final seconds = (at - DateTime.now().millisecondsSinceEpoch) / 1000;
       expect(seconds, inInclusiveRange(7, 11));
-      expect(
-        env.native.alarmCards.single,
-        isFalse,
-        reason: 'a notification, to test leaving the app',
-      );
       expect(find.textContaining('Leave the app now'), findsOneWidget);
     },
   );
 
   testWidgets(
-    '"Next task (test)" without tasks still tests the reminder, and without the alarms permission says what to turn on',
+    '"Task alarm (test)" without a task says so, and without the alarms permission says what to turn on',
     (t) async {
       t.view.physicalSize = const Size(900, 3200);
       t.view.devicePixelRatio = 1;
@@ -319,21 +341,24 @@ void main() {
       await t.ensureVisible(find.byKey(const Key('test-next')));
       await t.pump();
       await t.tap(find.byKey(const Key('test-next')));
-      await t.pump();
-      expect(env.native.alarms.single.$3, startsWith('Test reminder'));
+      await t.pumpAndSettle();
+      expect(find.textContaining('no task left'), findsOneWidget);
+      expect(env.native.alarms, isEmpty);
     },
   );
 
   testWidgets(
-    '"Next task (test)" without the alarms permission says what to turn on and schedules nothing',
+    '"Task alarm (test)" without the alarms permission says what to turn on',
     (t) async {
       t.view.physicalSize = const Size(900, 3200);
       t.view.devicePixelRatio = 1;
       addTearDown(t.view.reset);
       final off = Env(
         profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
+        hour: 9,
       );
       off.native.exactAlarms = false;
+      await off.tasks.upsert(german);
       await t.pumpWidget(
         MaterialApp(
           home: HomePage(key: UniqueKey(), services: off.services),
@@ -343,30 +368,62 @@ void main() {
       await t.ensureVisible(find.byKey(const Key('test-next')));
       await t.pump();
       await t.tap(find.byKey(const Key('test-next')));
-      await t.pump();
+      await t.pumpAndSettle();
       expect(find.textContaining('Alarms and reminders'), findsOneWidget);
       expect(off.native.alarms, isEmpty);
     },
   );
 
-  testWidgets('"Nudge card (test)" asks for the card on top of other apps', (
+  testWidgets(
+    '"Nudge card (test)" shows a card Lify wrote for your top app, never a fixed text',
+    (t) async {
+      t.view.physicalSize = const Size(900, 3200);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final env = Env(
+        profile: {
+          'wake': '07:00',
+          'sleep': '23:30',
+          'apps': ['TikTok'],
+        },
+      );
+      await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.byKey(const Key('test-card')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('test-card')));
+      await t.pump(const Duration(milliseconds: 100));
+      await t.pump(const Duration(milliseconds: 100));
+      await t.pumpAndSettle();
+      expect(env.native.alarmCards.single, isTrue);
+      expect(env.native.alarms.single.$1, 'test-card');
+      expect(
+        env.native.alarms.single.$3,
+        startsWith('Mo, 45 minutes of TikTok'),
+      );
+      expect(env.native.alarmTitles.single, '45 min on TikTok');
+      expect(env.nudges.single['app'], 'TikTok');
+    },
+  );
+
+  testWidgets('"Nudge card (test)" offline: no card, and it says why', (
     t,
   ) async {
     t.view.physicalSize = const Size(900, 3200);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
-    final env = Env(
-      profile: {'wake': '07:00', 'sleep': '23:30', 'apps': <String>[]},
-    );
+    final env = Env(offline: true);
     await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
     await t.pumpAndSettle();
     await t.ensureVisible(find.byKey(const Key('test-card')));
     await t.pump();
     await t.tap(find.byKey(const Key('test-card')));
-    await t.pump(const Duration(milliseconds: 100));
-    await t.pump(const Duration(milliseconds: 100));
-    expect(env.native.alarmCards.single, isTrue);
-    expect(env.native.alarms.single.$1, 'test-card');
+    await t.pumpAndSettle();
+    expect(env.native.alarms, isEmpty);
+    expect(
+      find.textContaining('Lify could not write the card (network)'),
+      findsOneWidget,
+    );
   });
 
   test(

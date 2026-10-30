@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../agent/models.dart';
 import '../device/device_runner.dart';
+import '../device/rules.dart';
 
 /// Everything only Android can do (the Kotlin side lives in android/app/src/main/kotlin). Kept behind one interface
 /// so the rest of the app, and its tests, never touch a platform channel.
@@ -22,9 +24,24 @@ abstract class Native {
     required int atMillis,
     required String message,
     bool card = false,
+    String? title,
+    String? open,
   });
 
+  /// A real alarm in the phone's Clock app (today at [hour]:[minute]).
+  Future<bool> setPhoneAlarm({
+    required int hour,
+    required int minute,
+    required String message,
+  });
+
+  /// Stops the in-app alarm sound (the task screen was opened).
+  Future<void> stopAlarmSound();
+
   Future<void> cancelAlarm(String id);
+
+  /// Tells the watcher the user's reminder rules. Returns the app names it could not find on this phone.
+  Future<List<String>> applyRules(List<SessionRule> rules);
 
   /// Tells the background watcher which apps are limited (name -> minutes per day). Returns the names it could not find on this phone.
   Future<List<String>> applyLimits(Map<String, int> limits);
@@ -42,9 +59,55 @@ abstract class Native {
   /// Permission to show the nudge card on top of the app you are in. Without it a notification is used instead.
   Future<bool> canDrawOverlay();
   Future<void> openOverlaySettings();
+
+  /// Nudges as plain notifications instead of cards (for phones that hide cards from apps in the background).
+  Future<void> setNudgesAsNotifications({required bool on});
+
+  /// Plays a WAV (Lify's voice) through the phone's media sound; a new one stops the one before.
+  Future<void> playAudio(Uint8List wav);
+  Future<void> stopAudio();
+
+  /// Asks to leave Life out of battery saving, so the phone does not stop the watcher in the background.
+  Future<void> openBatterySettings();
+
+  /// Xiaomi, Redmi and POCO: the screen with "Display pop-up windows while running in the background".
+  Future<void> openPopupSettings();
+
+  /// Turns the experiments on or off (the user opted in), and the compressed demo thresholds.
+  Future<void> configureExperiments({
+    required bool enabled,
+    required bool demo,
+  });
+
+  Future<bool> hasCalendarAccess();
+  Future<void> requestCalendar();
+
+  /// The events on [date] (YYYY-MM-DD) from the phone's calendar, or null when calendar access is off.
+  Future<List<CalendarEntry>?> calendarEvents(String date);
+
+  /// When the phone went quiet each of the last [nights] nights, newest first (from its usage events).
+  Future<List<PhoneNight>> phoneNights({int nights = 7});
+
+  /// Sets the evening reminder, one hour before [sleep] (HH:MM), every evening.
+  Future<void> configureEvening({required String sleep});
+
+  /// What a notification asked the app to open ("plan"), once; null when nothing.
+  Future<String?> takeLaunchAction();
+
+  /// What the background watcher is doing (Settings > Check Lify): running, limits, permissions, its last problem.
+  Future<Map<String, Object?>> watcherStatus();
 }
 
+/// Changes when a notification or alarm asks the open app to show a screen (then read it with takeLaunchAction).
+final launchActionPing = ValueNotifier<int>(0);
+
 class MethodChannelNative implements Native {
+  MethodChannelNative() {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'launchAction') launchActionPing.value++;
+    });
+  }
+
   static const _channel = MethodChannel('org.ngdev.life_agent/native');
 
   Future<T> _call<T>(String method, [Object? args]) async =>
@@ -89,12 +152,38 @@ class MethodChannelNative implements Native {
     required int atMillis,
     required String message,
     bool card = false,
+    String? title,
+    String? open,
   }) => _call<bool>('scheduleAlarm', {
     'id': id,
     'at': atMillis,
     'message': message,
     'card': card,
+    'title': ?title,
+    'open': ?open,
   });
+
+  @override
+  Future<bool> setPhoneAlarm({
+    required int hour,
+    required int minute,
+    required String message,
+  }) => _call<bool>('setPhoneAlarm', {
+    'hour': hour,
+    'minute': minute,
+    'message': message,
+  });
+
+  @override
+  Future<void> stopAlarmSound() => _call<void>('stopAlarmSound');
+
+  @override
+  Future<List<String>> applyRules(List<SessionRule> rules) async => [
+    for (final a in await _call<List<Object?>>('applyRules', {
+      'rules': [for (final r in rules) r.toJson()],
+    }))
+      a as String,
+  ];
 
   @override
   Future<void> cancelAlarm(String id) => _call<void>('cancelAlarm', {'id': id});
@@ -129,6 +218,80 @@ class MethodChannelNative implements Native {
 
   @override
   Future<void> openOverlaySettings() => _call<void>('openOverlaySettings');
+
+  @override
+  Future<void> setNudgesAsNotifications({required bool on}) =>
+      _call<void>('setNudgesAsNotifications', {'on': on});
+
+  @override
+  Future<void> playAudio(Uint8List wav) =>
+      _call<void>('playAudio', {'wav': wav});
+
+  @override
+  Future<void> stopAudio() => _call<void>('stopAudio');
+
+  @override
+  Future<void> openBatterySettings() => _call<void>('openBatterySettings');
+
+  @override
+  Future<void> openPopupSettings() => _call<void>('openPopupSettings');
+
+  @override
+  Future<void> configureExperiments({
+    required bool enabled,
+    required bool demo,
+  }) => _call<void>('configureExperiments', {'enabled': enabled, 'demo': demo});
+
+  @override
+  Future<List<PhoneNight>> phoneNights({int nights = 7}) async => [
+    for (final r in await _call<List<Object?>>('phoneNights', {
+      'nights': nights,
+    }))
+      PhoneNight(
+        night: (r as Map)['night'] as String,
+        down: r['down'] as String,
+        up: r['up'] as String?,
+      ),
+  ];
+
+  @override
+  Future<void> configureEvening({required String sleep}) =>
+      _call<void>('configureEvening', {'sleep': sleep});
+
+  @override
+  Future<Map<String, Object?>> watcherStatus() async =>
+      Map<String, Object?>.from(
+        await _channel.invokeMethod<Map<Object?, Object?>>('watcherStatus') ??
+            const {},
+      );
+
+  @override
+  Future<String?> takeLaunchAction() =>
+      _channel.invokeMethod<String>('takeLaunchAction');
+
+  @override
+  Future<bool> hasCalendarAccess() => _call<bool>('hasCalendarAccess');
+
+  @override
+  Future<void> requestCalendar() => _call<void>('requestCalendar');
+
+  @override
+  Future<List<CalendarEntry>?> calendarEvents(String date) async {
+    final raw = await _channel.invokeMethod<List<Object?>>('calendarEvents', {
+      'date': date,
+    });
+    if (raw == null) return null;
+    return [
+      for (final r in raw)
+        CalendarEntry(
+          title: (r as Map)['title'] as String,
+          start: r['start'] as String,
+          end: r['end'] as String,
+          allDay: r['all_day'] == true,
+          busy: r['busy'] != false,
+        ),
+    ];
+  }
 }
 
 class NativeAlarmScheduler implements AlarmScheduler {
@@ -142,6 +305,8 @@ class NativeAlarmScheduler implements AlarmScheduler {
     required DateTime at,
     required String message,
     bool card = false,
+    String? title,
+    String? open,
   }) async {
     try {
       return await native.scheduleAlarm(
@@ -149,6 +314,25 @@ class NativeAlarmScheduler implements AlarmScheduler {
         atMillis: at.millisecondsSinceEpoch,
         message: message,
         card: card,
+        title: title,
+        open: open,
+      );
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> phoneAlarm({
+    required int hour,
+    required int minute,
+    required String message,
+  }) async {
+    try {
+      return await native.setPhoneAlarm(
+        hour: hour,
+        minute: minute,
+        message: message,
       );
     } on PlatformException {
       return false;
@@ -183,10 +367,11 @@ class NativeLimitEnforcer implements LimitEnforcer {
 
 /// Reads the real screen time and sends it to the agent (daily summaries, never an event log).
 class UsageSync {
-  UsageSync({required this.native, required this.upload});
+  UsageSync({required this.native, required this.upload, this.uploadNights});
 
   final Native native;
   final Future<void> Function(List<UsageRow>) upload;
+  final Future<void> Function(List<PhoneNight>)? uploadNights;
 
   /// `needsPermission` is true when the user has not turned on Usage access yet (the agent then plans without real numbers).
   Future<UsageSyncResult> run({int days = 7}) async {
@@ -195,6 +380,11 @@ class UsageSync {
         return const UsageSyncResult(needsPermission: true);
       final rows = await native.usageSummary(days: days);
       if (rows.isNotEmpty) await upload(rows);
+      try {
+        await uploadNights?.call(await native.phoneNights());
+      } catch (_) {
+        // the phone-down times are a bonus; the screen time is what matters here
+      }
       return UsageSyncResult(rows: rows.length);
     } catch (_) {
       return const UsageSyncResult(failed: true);

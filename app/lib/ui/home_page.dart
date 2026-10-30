@@ -7,9 +7,13 @@ import '../chat/chat_page.dart';
 import '../device/next_task.dart';
 import '../device/stores.dart';
 import '../onboarding/onboarding_store.dart';
+import '../platform/native.dart';
 import '../platform/services.dart';
 import 'motion.dart';
 import 'settings_page.dart';
+import 'task_page.dart';
+import '../platform/experiment_settings.dart';
+import 'learning.dart';
 import 'theme.dart';
 
 class HomePage extends StatefulWidget {
@@ -34,25 +38,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int? _screenToday;
   String? _name;
   String? _offline;
+  List<Strategy> _strategies = [];
+  ExperimentResults? _results;
+  ExperimentSettings _experiments = const ExperimentSettings();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    launchActionPing.addListener(_openFromNotification);
     _refresh();
     s.syncWatcher();
+    s.syncNights();
+    // opened by an alarm or the evening reminder: go to that screen even if the server cannot be reached
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _openFromNotification(),
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    launchActionPing.removeListener(_openFromNotification);
     _scroll.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refresh();
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+      s.syncNights();
+      _openFromNotification(); // an alarm or the evening reminder brought the app to the front
+    }
   }
 
   Future<void> _refresh() async {
@@ -94,12 +112,83 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           _offline = null;
         });
       }
+      s.syncWatcher(distracting: profile.apps, sleep: profile.sleep);
+      _openFromNotification();
     } catch (e) {
       if (mounted) {
         setState(() => _offline = 'Offline: showing what is on this phone.');
       }
+      return;
+    }
+    await _refreshLearning();
+  }
+
+  /// The evening reminder opens the app straight on "Plan tomorrow".
+  Future<void> _openFromNotification() async {
+    String? action;
+    try {
+      action = await s.native.takeLaunchAction();
+    } catch (_) {}
+    if (!mounted || action == null) return;
+    if (action == 'plan') _planTomorrow();
+    if (action.startsWith('task:')) {
+      final id = action.substring(5);
+      final task = (await s.tasks.forDate(
+        s.today,
+      )).where((t) => t.id == id).firstOrNull;
+      try {
+        await s.native.stopAlarmSound();
+      } catch (_) {}
+      if (task != null && mounted) _openTask(task, ringing: true);
     }
   }
+
+  /// The task's own screen: its first step, what was decided, its steps, links, PDFs and pictures.
+  Future<void> _openTask(LocalTask task, {bool ringing = false}) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TaskPage(
+          task: task,
+          opener: s.opener,
+          ringing: ringing,
+          onDone: () => s.tasks.setDone(task.id, true),
+        ),
+      ),
+    );
+    _refresh();
+  }
+
+  /// The strategy versions and the experiment totals: extras, so a failure here never marks the app offline.
+  Future<void> _refreshLearning() async {
+    final settings = await s.experimentSettings.load();
+    List<Strategy> strategies = _strategies;
+    ExperimentResults? results = _results;
+    try {
+      strategies = (await s.api.strategy()).history;
+    } catch (_) {}
+    if (settings.enabled) {
+      try {
+        results = await s.api.experiments(today: s.today);
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _experiments = settings;
+        _strategies = strategies;
+        _results = results;
+      });
+    }
+  }
+
+  Future<void> _enableExperiments() async {
+    await s.experimentSettings.save(_experiments.copyWith(enabled: true));
+    await s.syncWatcher(distracting: _profile.apps);
+    await _refreshLearning();
+  }
+
+  void _openStrategy() => Navigator.of(context).push(
+    MaterialPageRoute<void>(builder: (_) => StrategyPage(history: _strategies)),
+  );
 
   bool get _needsSetup =>
       _profileLoaded && (_profile.wake == null || _profile.sleep == null);
@@ -239,6 +328,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           next: next,
           opener: s.opener,
           onChanged: _setDone,
+          onOpen: _openTask,
         ),
       // Tomorrow's tasks are not shown tonight: nothing to read before sleep. They appear in the morning.
       if (_tomorrowPlanned)
@@ -249,6 +339,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           title: 'Tomorrow is planned. Rest now.',
           subtitle: 'Your tasks show up in the morning.',
         ),
+      const _SectionTitle(title: 'Lify is learning'),
+      if (_strategies.isNotEmpty)
+        StrategyCard(strategy: _strategies.first, onOpen: _openStrategy),
+      ExperimentCard(
+        enabled: _experiments.enabled,
+        results: _results,
+        onEnable: _enableExperiments,
+        onOpenLab: _results == null
+            ? null
+            : () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => LabNotebookPage(results: _results!),
+                ),
+              ),
+      ),
       const _SectionTitle(title: 'Talk to Lify'),
       _LifyActions(
         evening: evening,
@@ -258,7 +363,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       _TestTools(
         onNext: () => _say(s.testNextTask),
-        onCard: () => _say(s.testNudgeCard),
+        onEvening: () => _say(s.testEvening),
+        onCard: () => _say(() => s.testNudgeCard(distracting: _profile.apps)),
       ),
     ];
 
@@ -369,16 +475,14 @@ class _Header extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
+          // the picture stays in place with its fades (it scrolls away with the page); the header fades out instead
           AnimatedBuilder(
             animation: scroll,
             builder: (context, child) {
               final offset = scroll.hasClients
-                  ? scroll.offset.clamp(0.0, 250.0)
+                  ? scroll.offset.clamp(0.0, 200.0)
                   : 0.0;
-              return Transform.translate(
-                offset: Offset(0, offset * 0.45),
-                child: child,
-              );
+              return Opacity(opacity: 1 - offset / 260, child: child);
             },
             child: Align(
               alignment: Alignment.bottomCenter,
@@ -708,7 +812,13 @@ class _StatsRow extends StatelessWidget {
                         color: Brand.coral,
                       ),
                       const SizedBox(width: 4),
-                      Text('Screen time', style: t.labelSmall),
+                      Flexible(
+                        child: Text(
+                          'Screen time',
+                          style: t.labelSmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -896,8 +1006,13 @@ class _SectionTitle extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(title, style: t.headlineSmall),
-          const Spacer(),
+          Expanded(
+            child: Text(
+              title,
+              style: t.headlineSmall,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           if (trailing != null)
             Text(
               trailing!,
@@ -948,9 +1063,11 @@ class _Timeline extends StatelessWidget {
     required this.next,
     required this.opener,
     required this.onChanged,
+    required this.onOpen,
   });
 
   final List<LocalTask> tasks;
+  final void Function(LocalTask) onOpen;
   final LocalTask? next;
   final LinkOpener opener;
   final void Function(LocalTask, bool) onChanged;
@@ -969,6 +1086,7 @@ class _Timeline extends StatelessWidget {
             last: i == sorted.length - 1,
             opener: opener,
             onChanged: (v) => onChanged(sorted[i], v),
+            onOpen: () => onOpen(sorted[i]),
           ),
       ],
     );
@@ -983,9 +1101,11 @@ class _TaskRow extends StatefulWidget {
     required this.last,
     required this.opener,
     required this.onChanged,
+    required this.onOpen,
   });
 
   final LocalTask task;
+  final VoidCallback onOpen;
   final bool isNext;
   final bool first;
   final bool last;
@@ -1149,6 +1269,15 @@ class _TaskRowState extends State<_TaskRow> {
                               ),
                               label: const Text('Open material'),
                             ),
+                          TextButton.icon(
+                            key: Key('open-task-${task.title}'),
+                            onPressed: widget.onOpen,
+                            icon: const Icon(
+                              Icons.fullscreen_rounded,
+                              size: 18,
+                            ),
+                            label: const Text('Open task screen'),
+                          ),
                         ],
                       ],
                     ),
@@ -1327,12 +1456,17 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
-/// The two checks for the demo phone: a reminder and the nudge card, each 10 seconds from now.
+/// The checks for the demo phone: the next task's alarm, the nudge card, and the evening reminder.
 class _TestTools extends StatelessWidget {
-  const _TestTools({required this.onNext, required this.onCard});
+  const _TestTools({
+    required this.onNext,
+    required this.onCard,
+    required this.onEvening,
+  });
 
   final VoidCallback onNext;
   final VoidCallback onCard;
+  final VoidCallback onEvening;
 
   @override
   Widget build(BuildContext context) {
@@ -1350,8 +1484,14 @@ class _TestTools extends StatelessWidget {
             OutlinedButton.icon(
               key: const Key('test-next'),
               onPressed: onNext,
-              icon: const Icon(Icons.notifications_active_outlined, size: 18),
-              label: const Text('Next task (test)'),
+              icon: const Icon(Icons.alarm_rounded, size: 18),
+              label: const Text('Task alarm (test)'),
+            ),
+            OutlinedButton.icon(
+              key: const Key('test-evening'),
+              onPressed: onEvening,
+              icon: const Icon(Icons.nightlight_round, size: 18),
+              label: const Text('Evening reminder (test)'),
             ),
             OutlinedButton.icon(
               key: const Key('test-card'),

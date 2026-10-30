@@ -71,7 +71,7 @@ test('a network failure says why without the URL, and a timeout is told apart', 
 
 test('configuration comes from the environment and a missing piece is an error', () => {
   const env: Record<string, string> = { MUSE_BASE_URL: 'https://x/v1/', MUSE_API_KEY: 'k', MUSE_MODEL: 'm' };
-  assert.deepEqual(configFromEnv((n) => env[n]), { baseUrl: 'https://x/v1', apiKey: 'k', model: 'm' });
+  assert.deepEqual(configFromEnv((n) => env[n]), { baseUrl: 'https://x/v1', apiKey: 'k', model: 'm', label: 'spark' });
   for (const missing of Object.keys(env)) {
     const partial = { ...env };
     delete partial[missing];

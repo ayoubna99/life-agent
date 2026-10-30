@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:life_agent/agent/models.dart';
+import 'package:life_agent/device/rules.dart';
 import 'package:life_agent/platform/native.dart';
 import 'package:life_agent/platform/services.dart';
 import 'package:life_agent/platform/voice_settings.dart';
@@ -98,11 +99,44 @@ class FakeNative implements Native {
     required int atMillis,
     required String message,
     bool card = false,
+    String? title,
+    String? open,
   }) async {
     if (!exactAlarms) return false;
     alarms.add((id, atMillis, message));
     alarmCards.add(card);
+    alarmTitles.add(title);
+    alarmOpens.add(open);
     return true;
+  }
+
+  final List<String?> alarmOpens = [];
+  final List<(int, int, String)> phoneAlarms = [];
+  int alarmSoundStops = 0;
+
+  @override
+  Future<bool> setPhoneAlarm({
+    required int hour,
+    required int minute,
+    required String message,
+  }) async {
+    phoneAlarms.add((hour, minute, message));
+    return true;
+  }
+
+  @override
+  Future<void> stopAlarmSound() async => alarmSoundStops++;
+
+  final List<String?> alarmTitles = [];
+  List<SessionRule>? rules;
+
+  @override
+  Future<List<String>> applyRules(List<SessionRule> rules) async {
+    this.rules = rules;
+    return [
+      for (final r in rules)
+        if (!r.anyApp && !apps.contains(r.app)) r.app,
+    ];
   }
 
   final List<String> cancelled = [];
@@ -137,4 +171,92 @@ class FakeNative implements Native {
 
   @override
   Future<void> openOverlaySettings() async => overlaySettingsOpened++;
+
+  bool? nudgesAsNotifications;
+
+  @override
+  Future<void> setNudgesAsNotifications({required bool on}) async =>
+      nudgesAsNotifications = on;
+
+  final played = <Uint8List>[];
+
+  @override
+  Future<void> playAudio(Uint8List wav) async => played.add(wav);
+
+  @override
+  Future<void> stopAudio() async {}
+
+  int batterySettingsOpened = 0;
+  int popupSettingsOpened = 0;
+
+  @override
+  Future<void> openBatterySettings() async => batterySettingsOpened++;
+
+  @override
+  Future<void> openPopupSettings() async => popupSettingsOpened++;
+
+  ({bool enabled, bool demo})? experiments;
+
+  @override
+  Future<void> configureExperiments({
+    required bool enabled,
+    required bool demo,
+  }) async => experiments = (enabled: enabled, demo: demo);
+
+  bool calendarAccess = true;
+  int calendarRequests = 0;
+  List<CalendarEntry> calendar = const [
+    CalendarEntry(title: 'Lecture', start: '10:00', end: '12:00'),
+  ];
+
+  List<PhoneNight> nights = const [
+    PhoneNight(night: '2026-10-26', down: '03:12', up: '10:40'),
+  ];
+  String? eveningSleep;
+  String? launchAction;
+
+  @override
+  Future<List<PhoneNight>> phoneNights({int nights = 7}) async => this.nights;
+
+  @override
+  Future<void> configureEvening({required String sleep}) async =>
+      eveningSleep = sleep;
+
+  Map<String, Object?> status = {
+    'running': true,
+    'limits': ['TikTok 30 min'],
+    'rules': 0,
+    'experiments': true,
+    'demo': true,
+    'usageAccess': true,
+    'overlay': true,
+    'lastProblem': null,
+    'lastProblemAt': 0,
+    'lastNudgeAt': 0,
+    'unsentResults': 0,
+    'eveningSleep': '23:00',
+  };
+
+  @override
+  Future<Map<String, Object?>> watcherStatus() async => status;
+
+  @override
+  Future<String?> takeLaunchAction() async {
+    final a = launchAction;
+    launchAction = null;
+    return a;
+  }
+
+  @override
+  Future<bool> hasCalendarAccess() async => calendarAccess;
+
+  @override
+  Future<void> requestCalendar() async {
+    calendarRequests++;
+    calendarAccess = true;
+  }
+
+  @override
+  Future<List<CalendarEntry>?> calendarEvents(String date) async =>
+      calendarAccess ? calendar : null;
 }

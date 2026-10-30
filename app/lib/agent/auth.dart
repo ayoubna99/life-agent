@@ -55,7 +55,11 @@ class PrefsAuthStore implements AuthStore {
 
   @override
   Future<AuthSession?> load() async {
-    final raw = (await SharedPreferences.getInstance()).getString(_key);
+    final prefs = await SharedPreferences.getInstance();
+    // The background watcher (Kotlin) refreshes this same session while the app is closed and writes it here. Flutter
+    // caches stored values, so read the file again: otherwise the app would use a refresh token that is already spent.
+    await prefs.reload();
+    final raw = prefs.getString(_key);
     if (raw == null) return null;
     try {
       return AuthSession.fromJson(
@@ -105,20 +109,42 @@ class AnonymousAuth {
   }
 
   Future<AuthSession> _ensure(bool forceRefresh) async {
-    _session ??= await store.load();
+    // Always start from what is stored: the background watcher may have refreshed the session since we last looked
+    // (each refresh token works once, so using an old one would fail).
+    final stored = await store.load();
+    if (stored != null) _session = stored;
     final s = _session;
     if (s != null &&
         !forceRefresh &&
         s.expiresAt.isAfter(_now().add(const Duration(seconds: 60))))
       return s;
     if (s != null) {
-      final refreshed = await _request(
-        '/auth/v1/token?grant_type=refresh_token',
-        {'refresh_token': s.refreshToken},
-        allowFailure: true,
-      );
+      final refreshed = await _refresh(s);
       if (refreshed != null) return _keep(refreshed);
+      // Refused: maybe the watcher refreshed it at the same moment. Try once more with whatever is stored now.
+      final again = await store.load();
+      if (again != null && again.refreshToken != s.refreshToken) {
+        if (again.expiresAt.isAfter(_now().add(const Duration(seconds: 60))))
+          return _session = again;
+        final second = await _refresh(again);
+        if (second != null) return _keep(second);
+      }
+      // The session is really gone. A new anonymous user would start with no plans and no settings, so never do that
+      // silently: say so (the app shows it) and keep the old session for the next try.
+      throw AgentException('session_lost');
     }
+    final created = await _request('/auth/v1/signup', const {});
+    return _keep(created!);
+  }
+
+  Future<AuthSession?> _refresh(AuthSession s) => _request(
+    '/auth/v1/token?grant_type=refresh_token',
+    {'refresh_token': s.refreshToken},
+    allowFailure: true,
+  );
+
+  /// Starts over as a new anonymous user (only when the person asks, from Settings): their old data stays behind.
+  Future<AuthSession> startOver() async {
     final created = await _request('/auth/v1/signup', const {});
     return _keep(created!);
   }

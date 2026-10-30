@@ -3,7 +3,9 @@ package org.ngdev.life_agent.core
 import java.util.Calendar
 import java.util.TimeZone
 
-enum class UsageEventType { FOREGROUND, BACKGROUND, OTHER }
+/** FOREGROUND/BACKGROUND: an app's screen came to the front / went to the back. UNLOCK: the person unlocked the phone.
+ *  LOCK: the screen went off or the lock screen came back. */
+enum class UsageEventType { FOREGROUND, BACKGROUND, UNLOCK, LOCK, OTHER }
 
 data class UsageEvent(val timeMs: Long, val pkg: String, val type: UsageEventType)
 
@@ -39,7 +41,7 @@ object UsageAggregator {
                     openAt = e.timeMs
                 }
                 UsageEventType.BACKGROUND -> if (openPkg == e.pkg) close(e.timeMs)
-                UsageEventType.OTHER -> Unit
+                else -> Unit
             }
         }
         close(endMs)
@@ -53,7 +55,7 @@ object UsageAggregator {
             when (e.type) {
                 UsageEventType.FOREGROUND -> open = e.pkg
                 UsageEventType.BACKGROUND -> if (open == e.pkg) open = null
-                UsageEventType.OTHER -> Unit
+                else -> Unit
             }
         }
         return open

@@ -57,12 +57,80 @@ class AgentApi {
     }
   }
 
+  /// The evening reminder's words, or null when tomorrow is already planned. [test] writes it anyway.
+  Future<String?> evening({
+    required String today,
+    required String tomorrow,
+    required String now,
+    List<String> done = const [],
+    List<String> missed = const [],
+    bool test = false,
+  }) async {
+    final json = await _agent({
+      'action': 'evening',
+      'today': today,
+      'tomorrow': tomorrow,
+      'now': now,
+      'done': done,
+      'missed': missed,
+      if (test) 'test': true,
+    });
+    return json['planned'] == true ? null : json['text'] as String?;
+  }
+
+  /// Lify's voice: [text] spoken by Orpheus on Baseten, as a WAV file. Null when the server has no voice set up
+  /// (the phone's own voice is used then).
+  Future<Uint8List?> speak(String text) async {
+    try {
+      final json = await _agent({'action': 'speak', 'text': text});
+      final audio = json['audio'];
+      return audio is String ? base64Decode(audio) : null;
+    } on AgentException catch (e) {
+      if (e.code == 'tts_not_configured') return null;
+      rethrow;
+    }
+  }
+
+  /// When the phone went quiet on the last nights (phone use, not sleep).
+  Future<void> uploadNights(List<PhoneNight> nights) async {
+    if (nights.isEmpty) return;
+    await _agent({
+      'action': 'usage',
+      'nights': [for (final n in nights.take(14)) n.toJson()],
+    });
+  }
+
   Future<SavedPlan?> plan(String date) async {
     final json = await _agent({'action': 'plan', 'date': date});
     final plan = json['plan'];
     return plan == null
         ? null
         : SavedPlan.fromJson(Map<String, Object?>.from(plan as Map));
+  }
+
+  /// The newest strategy and the versions before it (newest first).
+  Future<({Strategy? current, List<Strategy> history})> strategy() async {
+    final json = await _agent({'action': 'strategy'});
+    final history = [
+      for (final s in (json['history'] as List? ?? const []))
+        Strategy.fromJson(Map<String, Object?>.from(s as Map)),
+    ];
+    return (current: history.isEmpty ? null : history.first, history: history);
+  }
+
+  /// The experiment totals over the last [days] days.
+  Future<ExperimentResults> experiments({
+    required String today,
+    int days = 14,
+  }) async {
+    final json = await _agent({
+      'action': 'experiments',
+      'today': today,
+      'days': days,
+    });
+    return ExperimentResults.fromJson(
+      Map<String, Object?>.from(json['results'] as Map),
+    );
   }
 
   Future<Profile> profile({Profile? set}) async {
@@ -82,6 +150,7 @@ class AgentApi {
     required String reason,
     String locale = 'en',
     List<String> done = const [],
+    String style = 'task',
   }) async {
     final json = await _agent({
       'action': 'nudge',
@@ -93,6 +162,7 @@ class AgentApi {
       'reason': reason,
       'locale': locale,
       'done': done,
+      'style': style,
     });
     return NudgeAnswer(
       text: json['text'] as String,

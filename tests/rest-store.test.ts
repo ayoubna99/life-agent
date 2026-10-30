@@ -146,3 +146,39 @@ test('the shared counter is read from its own database function', async () => {
   const { s: broken } = store(() => json(null));
   await assert.rejects(broken.bumpGlobalQuota(), StoreError);
 });
+
+test('strategy versions: read newest first, a save adds the next version number', async () => {
+  const row = { version: 2, for_date: '2026-10-30', strategy: { limits: [], plan_style: { max_tasks: 3 }, risk_windows: [], rules: [], changes: ['x 1'], evidence: ['y 2'] }, created_at: 't' };
+  const { s, seen } = store((x) => (x.method === 'GET' ? json([row]) : undefined));
+  const got = await s.getStrategy();
+  assert.equal(got?.version, 2);
+  assert.deepEqual(got?.plan_style, { max_tasks: 3 });
+  assert.match(seen[0].url, /strategies\?select=version,for_date,strategy,created_at&order=version\.desc&limit=1$/);
+  assert.equal(await s.saveStrategy('2026-10-31', row.strategy), 3);
+  const post = seen.find((x) => x.method === 'POST')!;
+  assert.deepEqual(post.body, { user_id: USER, version: 3, for_date: '2026-10-31', strategy: row.strategy });
+});
+
+test('experiments are stored once per event id and read back in the phone\'s shape', async () => {
+  const { s, seen } = store((x) =>
+    x.method === 'GET'
+      ? json([{ event_id: 'e1', day: '2026-10-29', local_time: '21:10', app: 'Instagram', arm: 'task', explore: true, reason: 'limit', left_app: true, seconds_after: 40, window_seconds: 900, demo: false }])
+      : undefined,
+  );
+  await s.saveExperiments([{ id: 'e1', day: '2026-10-29', time: '21:10', app: 'Instagram', arm: 'task', explore: true, reason: 'limit', left: true, seconds_after: 40, window_seconds: 900, demo: false }]);
+  assert.match(seen[0].url, /experiments\?on_conflict=user_id,event_id$/);
+  assert.equal(seen[0].headers.Prefer, 'resolution=ignore-duplicates,return=minimal');
+  assert.equal((seen[0].body as { left_app: boolean }[])[0].left_app, true);
+  const back = await s.getExperiments('2026-10-23');
+  assert.deepEqual(back[0], { id: 'e1', day: '2026-10-29', time: '21:10', app: 'Instagram', arm: 'task', explore: true, reason: 'limit', left: true, seconds_after: 40, window_seconds: 900, demo: false });
+  assert.match(seen[1].url, /experiments\?day=gte\.2026-10-23&/);
+});
+
+test('phone-down nights: upserted per night, read newest first', async () => {
+  const { s, seen } = store((x) => (x.method === 'GET' ? json([{ night: '2026-10-28', down_at: '03:12', up_at: null }]) : undefined));
+  await s.upsertNights([{ night: '2026-10-28', down: '03:12', up: '10:40' }]);
+  assert.match(seen[0].url, /phone_nights\?on_conflict=user_id,night$/);
+  assert.deepEqual(seen[0].body, [{ user_id: USER, night: '2026-10-28', down_at: '03:12', up_at: '10:40' }]);
+  assert.deepEqual(await s.getNights('2026-10-29'), [{ night: '2026-10-28', down: '03:12' }]);
+  assert.match(seen[1].url, /phone_nights\?night=lte\.2026-10-29&select=night,down_at,up_at&order=night\.desc&limit=7$/);
+});

@@ -4,6 +4,10 @@ enum class NudgeReason(val wire: String) {
     APPROACHING("approaching"),
     LIMIT("limit"),
     OVER("over"),
+    /** A limited app was opened during a calendar event (a lecture, a meeting): the limit is tighter then. */
+    EVENT("event"),
+    /** Demo mode: compressed thresholds, so experiments give results in minutes. */
+    DEMO("demo"),
 }
 
 data class NudgeDecision(val reason: NudgeReason, val key: String, val value: Long)
@@ -37,13 +41,16 @@ object NudgePolicy {
         return null
     }
 
+    /**
+     * During a calendar event the limit is tighter: opening a limited app at all gets one nudge per app per event.
+     * [eventStartMs] identifies the event.
+     */
+    fun decideEvent(day: String, pkg: String, eventStartMs: Long, nowMs: Long, lastNudgeAtMs: Long, sent: Map<String, Long>): NudgeDecision? {
+        if (nowMs - lastNudgeAtMs < COOLDOWN_MS) return null
+        val key = "$day|$pkg|event|$eventStartMs"
+        return if (sent.containsKey(key)) null else NudgeDecision(NudgeReason.EVENT, key, nowMs)
+    }
+
     /** Old days are forgotten so the saved state stays small. */
     fun keepOnly(day: String, sent: Map<String, Long>): Map<String, Long> = sent.filterKeys { it.startsWith("$day|") }
-
-    /** Shown when the agent cannot be reached: honest, short, no pretending to be personal. */
-    fun fallbackText(reason: NudgeReason, app: String, usedMinutes: Int, limitMinutes: Int): String = when (reason) {
-        NudgeReason.APPROACHING -> "You have used $usedMinutes of your $limitMinutes minutes on $app today."
-        NudgeReason.LIMIT -> "You reached your $limitMinutes minute limit on $app. Time to do something else."
-        NudgeReason.OVER -> "You are $usedMinutes minutes into $app today, past your $limitMinutes minute limit."
-    }
 }

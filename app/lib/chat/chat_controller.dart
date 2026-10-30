@@ -88,7 +88,14 @@ class ChatController extends ChangeNotifier {
       await _syncUsageOnce();
       final reply = await _ask(body, ids);
       final shown = plainText(reply.text);
-      messages.add(ChatMessage(Who.agent, shown, artifacts: reply.artifacts));
+      messages.add(
+        ChatMessage(
+          Who.agent,
+          shown,
+          artifacts: reply.artifacts,
+          strategy: reply.strategyUpdate,
+        ),
+      );
       planSaved = planSaved || reply.planSaved;
       if (reply.planSaved) {
         try {

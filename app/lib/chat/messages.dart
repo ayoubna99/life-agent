@@ -8,12 +8,16 @@ class ChatMessage {
     this.text, {
     this.artifacts = const [],
     this.error = false,
+    this.strategy,
   });
 
   final Who who;
   final String text;
   final List<Artifact> artifacts;
   final bool error;
+
+  /// The agent changed the user's strategy in this reply: shown as the "Strategy updated" card.
+  final StrategyUpdate? strategy;
 }
 
 /// Words for the person, never a raw code.
@@ -26,6 +30,8 @@ String describeError(Object e) {
   if (e.offline) return 'No connection. Check your internet and try again.';
   if (e.timedOut) return 'The agent took too long. Please try again.';
   switch (e.code) {
+    case 'session_lost':
+      return 'Your session with Lify was lost. Open Settings > Check Lify to see what happened.';
     case 'anonymous_provider_disabled':
     case 'auth_failed':
       return 'Could not start your session. Please try again in a moment.';

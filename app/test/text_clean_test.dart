@@ -84,6 +84,19 @@ void main() {
       expect(pickDefaultVoice(all, 'en')!.name, 'en-gb-x-gbb-network');
       expect(voicesFor(all, 'fr').single.name, 'fr-fr-x-vlf-local');
       expect(pickDefaultVoice(all, 'de'), isNull);
+      // Google's most natural voice wins when the phone has it
+      expect(
+        pickDefaultVoice([
+          ...all,
+          const SpeechVoice(name: 'en-us-x-sfg-network', locale: 'en-US'),
+        ], 'en')!.name,
+        'en-us-x-sfg-network',
+      );
     },
   );
+
+  test('the voice says Lify as LIFE-ee, the screen still says Lify', () {
+    expect(withSpokenName('Hi, I am Lify. LIFY!'), 'Hi, I am Lifey. Lifey!');
+    expect(withSpokenName('Lifestyle and Life'), 'Lifestyle and Life');
+  });
 }

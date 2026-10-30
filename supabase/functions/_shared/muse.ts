@@ -12,7 +12,21 @@ export interface MuseConfig {
   model: string;
   timeoutMs?: number;
   maxTokens?: number;
+  /** "spark" (Muse Spark) or "open" (Muse Spark Open, Meta's open-weights model, served by Baseten). */
+  label?: ModelLabel;
+  /** Extra request fields for this provider (for example reasoning_effort). */
+  extra?: Record<string, unknown>;
 }
+
+export type ModelLabel = 'spark' | 'open';
+
+/** The open-weights model always reasons before answering: it needs room for that, or the answer comes back empty. */
+export const OPEN_DEFAULTS = {
+  baseUrl: 'https://inference.baseten.co/v1',
+  model: 'meta-models/muse-spark-open-1026',
+  minTokens: 6000, // it used ~900 reasoning tokens just to say hi; a nudge prompt makes it think more
+  timeoutMs: 45_000,
+};
 
 export interface ToolCall {
   id: string;
@@ -70,7 +84,83 @@ export function configFromEnv(get: (name: string) => string | undefined): MuseCo
   const apiKey = get('MUSE_API_KEY')?.trim();
   const model = get('MUSE_MODEL')?.trim();
   if (!baseUrl || !apiKey || !model) throw new MuseError('not_configured');
-  return { baseUrl, apiKey, model };
+  return { baseUrl, apiKey, model, label: 'spark' };
+}
+
+/** Muse Spark Open on Baseten (OpenAI compatible), or null when OPEN_API_KEY is not set. */
+export function openConfigFromEnv(get: (name: string) => string | undefined): MuseConfig | null {
+  const apiKey = get('OPEN_API_KEY')?.trim();
+  if (!apiKey) return null;
+  // "low" by default: tested on Baseten, the same answer with ~30 reasoning tokens instead of ~900 ("off" sends none)
+  const setting = get('OPEN_REASONING_EFFORT')?.trim();
+  const effort = setting === 'off' ? undefined : setting || 'low';
+  return {
+    baseUrl: (get('OPEN_BASE_URL')?.trim() || OPEN_DEFAULTS.baseUrl).replace(/\/+$/, ''),
+    apiKey,
+    model: get('OPEN_MODEL')?.trim() || OPEN_DEFAULTS.model,
+    label: 'open',
+    ...(effort ? { extra: { reasoning_effort: effort } } : {}),
+  };
+}
+
+/** The jobs that can run on either model. */
+export type Job = 'chat' | 'nudge' | 'evening';
+
+/**
+ * Which model does a job, first choice then the other one as a fallback. MODEL_ROUTE lists the jobs for the open model
+ * (default "nudge,evening": the short, frequent writing). Without OPEN_API_KEY everything runs on Muse Spark.
+ */
+export function modelsFor(job: Job, get: (name: string) => string | undefined): MuseConfig[] {
+  const open = openConfigFromEnv(get);
+  let spark: MuseConfig | null = null;
+  try {
+    spark = configFromEnv(get);
+  } catch {
+    spark = null;
+  }
+  if (!open) {
+    if (!spark) throw new MuseError('not_configured');
+    return [spark];
+  }
+  const route = (get('MODEL_ROUTE') ?? 'nudge,evening').split(',').map((s) => s.trim().toLowerCase());
+  const first = route.includes(job) ? open : spark ?? open;
+  const second = first === open ? spark : open;
+  return second ? [first, second] : [first];
+}
+
+/** Sizes a request for the model it goes to: the open model gets room to reason and more time. */
+export function sized(cfg: MuseConfig, want: { maxTokens?: number; timeoutMs?: number; openTimeoutMs?: number }): MuseConfig {
+  const { openTimeoutMs, ...rest } = want;
+  if (cfg.label !== 'open') return { ...cfg, ...rest };
+  return {
+    ...cfg,
+    maxTokens: Math.max(want.maxTokens ?? 0, OPEN_DEFAULTS.minTokens),
+    // a nudge has to land while the person is still in the app: the caller can give the open model less time
+    timeoutMs: openTimeoutMs ?? Math.max(want.timeoutMs ?? 0, OPEN_DEFAULTS.timeoutMs),
+  };
+}
+
+/**
+ * Asks the first model; if it fails (down, too slow, an empty or broken answer), asks the next one. Returns the step
+ * and which model answered. The last error is thrown when every model failed.
+ */
+export async function callFirst(
+  cfgs: MuseConfig[],
+  messages: ChatMessage[],
+  tools: ToolDef[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ step: AgentStep; model: ModelLabel }> {
+  let last: unknown = new MuseError('not_configured');
+  for (const cfg of cfgs) {
+    try {
+      return { step: await callMuse(cfg, messages, tools, fetchImpl), model: cfg.label ?? 'spark' };
+    } catch (e) {
+      if (!(e instanceof MuseError) || e.code === 'not_configured') throw e;
+      console.error(`model ${cfg.label ?? 'spark'} failed: ${e.message}`);
+      last = e;
+    }
+  }
+  throw last;
 }
 
 export async function callMuse(
@@ -92,6 +182,7 @@ export async function callMuse(
         ...(tools.length ? { tools } : {}),
         ...(cfg.maxTokens ? { max_tokens: cfg.maxTokens } : {}),
         temperature: 0.4,
+        ...(cfg.extra ?? {}),
       }),
       signal: controller.signal,
     });

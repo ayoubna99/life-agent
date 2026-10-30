@@ -12,6 +12,7 @@ class AgentReply {
     required this.planSaved,
     required this.artifacts,
     required this.toolsRun,
+    this.strategyUpdate,
   });
 
   final String text;
@@ -19,6 +20,7 @@ class AgentReply {
   final bool planSaved;
   final List<Artifact> artifacts;
   final List<ToolRun> toolsRun;
+  final StrategyUpdate? strategyUpdate;
 }
 
 class ToolRun {
@@ -71,6 +73,7 @@ class AgentSession {
   Future<AgentReply> _run(Map<String, Object?> firstInput) async {
     var input = firstInput;
     var planSaved = false;
+    StrategyUpdate? strategyUpdate;
     final artifacts = <Artifact>[];
     final run = <ToolRun>[];
     if (mode == 'execute' && !_began) {
@@ -90,6 +93,7 @@ class AgentSession {
       conversationId = answer.conversationId;
       planSaved = planSaved || answer.planSaved;
       artifacts.addAll(answer.artifacts);
+      strategyUpdate = answer.strategyUpdate ?? strategyUpdate;
       if (!answer.wantsTools) {
         if (mode == 'execute') await tools.endRun();
         return AgentReply(
@@ -98,6 +102,7 @@ class AgentSession {
           planSaved: planSaved,
           artifacts: artifacts,
           toolsRun: run,
+          strategyUpdate: strategyUpdate,
         );
       }
       final results = <Map<String, Object?>>[];

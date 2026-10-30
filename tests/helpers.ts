@@ -4,6 +4,9 @@ import type { Mode } from '../supabase/functions/_shared/prompt.ts';
 import { StoreError } from '../supabase/functions/_shared/store.ts';
 import type { Profile } from '../supabase/functions/_shared/profile.ts';
 import type { NewDocument, SavedPlan, Store, StoredDocument, UsageRow } from '../supabase/functions/_shared/store.ts';
+import type { Strategy, StrategyData } from '../supabase/functions/_shared/strategy.ts';
+import type { ExperimentEvent } from '../supabase/functions/_shared/experiments.ts';
+import type { PhoneNight } from '../supabase/functions/_shared/nights.ts';
 
 export const SUPABASE_URL = 'https://proj.supabase.co';
 export const USER = '00000000-0000-0000-0000-00000000000a';
@@ -103,6 +106,36 @@ export class MemoryStore implements Store {
   async saveMaterial(fileName: string, markdown: string) {
     this.materials.set(fileName, markdown);
     return `${SUPABASE_URL}/storage/v1/object/sign/materials/${USER}/${fileName}?token=t`;
+  }
+  strategies: Strategy[] = []; // oldest first
+  async getStrategy() {
+    return structuredClone(this.strategies.at(-1) ?? null);
+  }
+  async listStrategies(limit: number) {
+    return structuredClone([...this.strategies].reverse().slice(0, limit));
+  }
+  async saveStrategy(forDate: string, data: StrategyData) {
+    this.check('strategy');
+    const version = (this.strategies.at(-1)?.version ?? 0) + 1;
+    this.strategies.push({ ...structuredClone(data), version, for_date: forDate });
+    return version;
+  }
+  experiments: ExperimentEvent[] = [];
+  async saveExperiments(events: ExperimentEvent[]) {
+    for (const e of events) if (!this.experiments.some((x) => x.id === e.id)) this.experiments.push({ ...e });
+  }
+  async getExperiments(since: string) {
+    return this.experiments.filter((e) => e.day >= since).map((e) => ({ ...e }));
+  }
+  nights: PhoneNight[] = [];
+  async upsertNights(nights: PhoneNight[]) {
+    for (const n of nights) {
+      this.nights = this.nights.filter((x) => x.night !== n.night);
+      this.nights.push({ ...n });
+    }
+  }
+  async getNights(upTo: string) {
+    return this.nights.filter((n) => n.night <= upTo).sort((a, b) => b.night.localeCompare(a.night)).slice(0, 7);
   }
 }
 

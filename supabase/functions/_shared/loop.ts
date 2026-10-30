@@ -4,7 +4,7 @@
 //   -> we load the stored conversation, ask Muse Spark, run any server tools ourselves,
 //   -> and return either the agent's text, or the device tool calls the phone must run next.
 
-import { callMuse, MuseError } from './muse.ts';
+import { callFirst, MuseError, sized } from './muse.ts';
 import type { ChatMessage, MuseConfig, ParsedCall } from './muse.ts';
 import { isDate } from './plan.ts';
 import { splitSpoken } from './reply.ts';
@@ -13,14 +13,14 @@ import type { Mode } from './prompt.ts';
 import type { PdfLoader } from './pdf.ts';
 import type { Store } from './store.ts';
 import { runServerTool } from './tools.ts';
-import type { Artifact } from './tools.ts';
+import type { Artifact, StrategyUpdate } from './tools.ts';
 import type { PdfMakeLoader } from './makepdf.ts';
 
 export const LIMITS = {
   maxSteps: 6,
   maxUserChars: 4000,
   maxResultChars: 8000,
-  maxResults: 6,
+  maxResults: 40, // the morning run applies a whole plan at once: up to 12 tasks, 8 limits, their reminders and the calendar
   maxStoredMessages: 150,
   maxReportItems: 20,
   maxReportChars: 120,
@@ -88,11 +88,14 @@ export interface ChatRequest {
 }
 
 export type ChatResponse =
-  | { type: 'text'; conversation_id: string; text: string; spoken?: string; plan_saved: boolean; artifacts: Artifact[] }
-  | { type: 'tool_calls'; conversation_id: string; calls: { id: string; name: string; args: Record<string, unknown> }[]; plan_saved: boolean; artifacts: Artifact[] };
+  | { type: 'text'; conversation_id: string; text: string; spoken?: string; plan_saved: boolean; artifacts: Artifact[]; strategy_update?: StrategyUpdate }
+  | { type: 'tool_calls'; conversation_id: string; calls: { id: string; name: string; args: Record<string, unknown> }[]; plan_saved: boolean; artifacts: Artifact[]; strategy_update?: StrategyUpdate };
 
 export interface ChatDeps {
+  /** Muse Spark: web search, photos and pictures always use it. */
   cfg: MuseConfig;
+  /** The models for the conversation itself, first choice first (default: just cfg). */
+  models?: MuseConfig[];
   store: Store;
   userId: string;
   supabaseUrl: string;
@@ -236,7 +239,12 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
   history.push(...toStore);
 
   const profile = await store.getProfile();
+  // Planning and execute apply the newest strategy; review reads it itself (get_strategy) and writes the next one.
+  const strategy = req.mode === 'review' ? null : await store.getStrategy();
+  const nights = req.mode === 'execute' ? [] : await store.getNights(req.today);
   const system = buildSystemPrompt({
+    strategy,
+    nights,
     profile,
     mode: req.mode,
     today: req.today,
@@ -247,18 +255,24 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
   });
   const tools = toolsFor(req.mode);
   let planSaved = false;
+  let strategyUpdate: StrategyUpdate | undefined;
   const artifacts: Artifact[] = [];
   const images = { left: LIMITS.maxImagesPerRequest };
 
   for (let step = 0; step < LIMITS.maxSteps; step++) {
-    const answer = await callMuse(deps.cfg, [{ role: 'system', content: system }, ...history], tools, fetchImpl);
+    const { step: answer } = await callFirst(
+      (deps.models ?? [deps.cfg]).map((c) => sized(c, {})),
+      [{ role: 'system', content: system }, ...history],
+      tools,
+      fetchImpl,
+    );
 
     if (answer.kind === 'text') {
       const msg: ChatMessage = { role: 'assistant', content: answer.text };
       await store.appendMessages(conversationId, [msg]);
       // The history keeps the full reply (so the model keeps the habit); the person gets the text and the spoken line apart.
       const { text, spoken } = splitSpoken(answer.text);
-      return { type: 'text', conversation_id: conversationId, text, ...(spoken ? { spoken } : {}), plan_saved: planSaved, artifacts };
+      return { type: 'text', conversation_id: conversationId, text, ...(spoken ? { spoken } : {}), plan_saved: planSaved, artifacts, ...(strategyUpdate ? { strategy_update: strategyUpdate } : {}) };
     }
 
     // The model may only ask for tools this mode has.
@@ -292,6 +306,7 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
       });
       if (out.planSaved) planSaved = true;
       if (out.artifact) artifacts.push(out.artifact);
+      if (out.strategy) strategyUpdate = out.strategy;
       answers.push({ role: 'tool', tool_call_id: call.id, content: out.content });
     }
     // Server answers are stored now. The device ones are stored when the phone reports back.
@@ -300,7 +315,7 @@ export async function runChat(req: ChatRequest, deps: ChatDeps): Promise<ChatRes
       history.push(...answers);
     }
     if (device.length) {
-      return { type: 'tool_calls', conversation_id: conversationId, calls: device.map((c) => ({ id: c.id, name: c.name, args: c.args })), plan_saved: planSaved, artifacts };
+      return { type: 'tool_calls', conversation_id: conversationId, calls: device.map((c) => ({ id: c.id, name: c.name, args: c.args })), plan_saved: planSaved, artifacts, ...(strategyUpdate ? { strategy_update: strategyUpdate } : {}) };
     }
   }
   throw new MuseError('bad_output');

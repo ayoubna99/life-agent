@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../agent/models.dart';
 import '../app_services.dart';
+import '../platform/check_words.dart';
+import '../device/rules.dart';
+import '../platform/experiment_settings.dart';
 import '../platform/voice_settings.dart';
+import 'last_night.dart';
 import 'motion.dart';
 import 'theme.dart';
 
@@ -36,6 +40,12 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _notifications = false;
   bool _alarms = false;
   bool _overlay = false;
+  bool _calendar = false;
+  ExperimentSettings _experiments = const ExperimentSettings();
+  List<SessionRule> _rules = [];
+  PhoneNight? _lastNight;
+  LifyCheck? _check;
+  bool _checking = false;
   VoiceSettings _voice = const VoiceSettings();
   List<SpeechVoice> _voices = [];
 
@@ -44,6 +54,16 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _permissions();
     _loadVoice();
+    s.experimentSettings.load().then((e) {
+      if (mounted) setState(() => _experiments = e);
+    });
+    _loadRules();
+    s.native
+        .phoneNights(nights: 2)
+        .then((n) {
+          if (mounted && n.isNotEmpty) setState(() => _lastNight = n.first);
+        })
+        .catchError((_) {});
     if (_name.text.isEmpty) {
       s.onboarding.name().then((n) {
         if (mounted && n != null && _name.text.isEmpty) _name.text = n;
@@ -66,6 +86,41 @@ class _SettingsPageState extends State<SettingsPage> {
         _voice = voice;
         _voices = voicesFor(all, s.languageCode);
       });
+  }
+
+  Future<void> _loadRules() async {
+    final rules = await s.rules.all();
+    if (mounted) setState(() => _rules = rules);
+  }
+
+  Future<void> _removeRule(SessionRule r) async {
+    await s.rules.remove(r.app);
+    try {
+      await s.native.applyRules(await s.rules.all());
+    } catch (_) {}
+    await _loadRules();
+  }
+
+  Future<void> _runCheck() async {
+    setState(() => _checking = true);
+    final c = await s.check();
+    if (mounted) {
+      setState(() {
+        _check = c;
+        _checking = false;
+      });
+    }
+  }
+
+  Future<void> _startOver() async {
+    await s.api.auth.startOver();
+    await _runCheck();
+  }
+
+  Future<void> _saveExperiments(ExperimentSettings e) async {
+    setState(() => _experiments = e);
+    await s.experimentSettings.save(e);
+    await s.syncWatcher(distracting: _apps);
   }
 
   Future<void> _saveVoice(VoiceSettings v) async {
@@ -120,12 +175,16 @@ class _SettingsPageState extends State<SettingsPage> {
       (_) => false,
     );
     final overlay = await s.native.canDrawOverlay().catchError((_) => false);
+    final calendar = await s.native.hasCalendarAccess().catchError(
+      (_) => false,
+    );
     if (mounted)
       setState(() {
         _usage = usage;
         _notifications = notifications;
         _alarms = alarms;
         _overlay = overlay;
+        _calendar = calendar;
       });
   }
 
@@ -219,6 +278,11 @@ class _SettingsPageState extends State<SettingsPage> {
       if (_name.text.trim().isNotEmpty) {
         await s.onboarding.saveName(_name.text.trim());
       }
+      if (_sleep != null) {
+        try {
+          await s.native.configureEvening(sleep: _sleep!);
+        } catch (_) {}
+      }
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
       if (mounted)
@@ -310,6 +374,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 trailing: _Value(_sleep ?? 'Set'),
                 onTap: () => _pick(false),
               ),
+              if (_lastNight != null && _sleep != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: LastNightNote(night: _lastNight!, sleep: _sleep!),
+                ),
               ListTile(
                 key: const Key('apps'),
                 leading: const _IconChip(Icons.apps_rounded),
@@ -380,6 +449,151 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          const _Section('Your reminders'),
+          _Group(
+            children: [
+              if (_rules.isEmpty)
+                const ListTile(
+                  leading: _IconChip(Icons.timer_outlined),
+                  title: Text('No reminders yet'),
+                  subtitle: Text(
+                    'Ask Lify in a chat: "whenever I am 30 minutes on TikTok, remind me to do 10 push-ups."',
+                  ),
+                )
+              else
+                for (final r in _rules)
+                  ListTile(
+                    key: Key('rule-${r.app}'),
+                    leading: const _IconChip(Icons.timer_outlined),
+                    title: Text(r.ask[0].toUpperCase() + r.ask.substring(1)),
+                    subtitle: Text(
+                      'After ${r.minutes} min in a row on ${r.anyApp ? 'any app' : r.app}',
+                    ),
+                    trailing: IconButton(
+                      key: Key('rule-remove-${r.app}'),
+                      tooltip: 'Remove',
+                      onPressed: () => _removeRule(r),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ),
+            ],
+          ),
+          const _Section('Experiments'),
+          _Group(
+            children: [
+              SwitchListTile(
+                key: const Key('exp-enabled'),
+                secondary: const _IconChip(Icons.science_rounded),
+                title: const Text('Let Life test what works for you'),
+                subtitle: const Text(
+                  'At a limit, I send a personal nudge in one of three styles (next task, time cost, your goal) and send more of what works. You see the numbers.',
+                ),
+                value: _experiments.enabled,
+                onChanged: (v) =>
+                    _saveExperiments(_experiments.copyWith(enabled: v)),
+              ),
+              SwitchListTile(
+                key: const Key('exp-demo'),
+                secondary: const _IconChip(Icons.bolt_rounded),
+                title: const Text('Demo mode'),
+                subtitle: const Text(
+                  'Compressed thresholds: 15 seconds in a limited app counts as a limit hit, results after a minute.',
+                ),
+                value: _experiments.demo,
+                onChanged: _experiments.enabled
+                    ? (v) => _saveExperiments(_experiments.copyWith(demo: v))
+                    : null,
+              ),
+            ],
+          ),
+          const _Section('Check Lify'),
+          _Group(
+            children: [
+              ListTile(
+                leading: const _IconChip(Icons.health_and_safety_rounded),
+                title: const Text('Is everything working?'),
+                subtitle: const Text(
+                  'Your account, the server, and the background watcher that sends nudges',
+                ),
+                trailing: _checking
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      )
+                    : TextButton(
+                        key: const Key('check-run'),
+                        onPressed: _runCheck,
+                        child: const Text('Check'),
+                      ),
+              ),
+              if (_check != null)
+                for (final line in checkLines(_check!))
+                  ListTile(
+                    key: Key('check-${line.what}'),
+                    dense: true,
+                    leading: Icon(
+                      line.ok
+                          ? Icons.check_circle_rounded
+                          : Icons.error_rounded,
+                      color: line.ok ? Brand.coral : theme.colorScheme.error,
+                    ),
+                    title: Text(line.what),
+                    subtitle: Text(line.detail),
+                    trailing: line.fix == null
+                        ? null
+                        : TextButton(
+                            key: Key('check-fix-${line.fix}'),
+                            onPressed: () => line.fix == 'battery'
+                                ? s.native.openBatterySettings()
+                                : s.native.openPopupSettings(),
+                            child: const Text('Fix'),
+                          ),
+                  ),
+              if (_check != null)
+                SwitchListTile(
+                  key: const Key('check-as-notifications'),
+                  secondary: const Icon(Icons.notifications_active_rounded),
+                  title: const Text('Nudges as notifications'),
+                  subtitle: const Text(
+                    'If cards only show up when you open Life again, this always works',
+                  ),
+                  value: _check!.watcher['asNotifications'] == true,
+                  onChanged: (v) async {
+                    await s.native.setNudgesAsNotifications(on: v);
+                    await _runCheck();
+                  },
+                ),
+              if (_check != null && watcherLog(_check!).isNotEmpty)
+                ExpansionTile(
+                  key: const Key('check-log'),
+                  leading: const Icon(Icons.history_rounded),
+                  title: const Text('What the watcher did'),
+                  subtitle: const Text(
+                    'Each nudge: asked, shown as a card or notification, or skipped and why',
+                  ),
+                  children: [
+                    for (final l in watcherLog(_check!).take(25))
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(l, style: theme.textTheme.bodySmall),
+                        ),
+                      ),
+                  ],
+                ),
+              if (_check?.server == 'session_lost')
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: OutlinedButton(
+                    key: const Key('check-start-over'),
+                    onPressed: _startOver,
+                    child: const Text('Start over with a new account'),
+                  ),
+                ),
+            ],
+          ),
           const _Section('Permissions'),
           _Group(
             children: [
@@ -423,6 +637,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 granted: _overlay,
                 onTap: () async {
                   await s.native.openOverlaySettings();
+                },
+              ),
+              _Perm(
+                key: const Key('perm-calendar'),
+                icon: Icons.event_rounded,
+                title: 'Calendar',
+                why:
+                    'Plans around your real events, with tighter limits during them (optional)',
+                granted: _calendar,
+                onTap: () async {
+                  await s.native.requestCalendar();
+                  _permissions();
                 },
               ),
               Padding(

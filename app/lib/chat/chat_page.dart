@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../agent/models.dart';
 import '../platform/services.dart';
+import '../ui/learning.dart';
 import '../ui/motion.dart';
 import '../ui/theme.dart';
 import 'chat_controller.dart';
@@ -449,6 +450,8 @@ class _Bubble extends StatelessWidget {
               SelectableText(message.text, style: TextStyle(color: fg)),
               for (final a in message.artifacts)
                 _ArtifactCard(artifact: a, opener: opener),
+              if (message.strategy != null)
+                StrategyUpdateCard(update: message.strategy!),
             ],
           ),
         ),

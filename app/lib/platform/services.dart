@@ -125,9 +125,24 @@ class DeviceSpeaker implements Speaker {
   final VoiceSettingsStore settings;
   final String languageCode;
   final FlutterTts _tts = FlutterTts();
+  Future<void>? _engine;
+
+  /// Google's speech engine has the natural "network" voices; Samsung and other phones default to their own, flatter
+  /// engine. Use Google's when it is installed (it is on almost every Android phone).
+  Future<void> _useBestEngine() => _engine ??= () async {
+    try {
+      final engines = await _tts.getEngines as List<dynamic>?;
+      if (engines?.contains('com.google.android.tts') ?? false) {
+        await _tts.setEngine('com.google.android.tts');
+      }
+    } catch (_) {
+      // the phone's default engine
+    }
+  }();
 
   @override
   Future<List<SpeechVoice>> voices() async {
+    await _useBestEngine();
     try {
       final raw = await _tts.getVoices as List<dynamic>?;
       return [
@@ -153,11 +168,11 @@ class DeviceSpeaker implements Speaker {
       if (chosen != null)
         await _tts.setVoice({'name': chosen.name, 'locale': chosen.locale});
       await _tts.setSpeechRate(s.rate);
-      await _tts.setPitch(1.0);
+      await _tts.setPitch(1.05);
     } catch (_) {
       // the phone's default voice still works
     }
-    await _tts.speak(text);
+    await _tts.speak(withSpokenName(text));
   }
 
   @override
