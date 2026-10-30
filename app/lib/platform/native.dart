@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -62,6 +64,9 @@ abstract class Native {
 
   /// Nudges as plain notifications instead of cards (for phones that hide cards from apps in the background).
   Future<void> setNudgesAsNotifications({required bool on});
+
+  /// Hands the newest night shift to the watcher (its nudge bank is used during the day, without the network).
+  Future<void> setNudgeBank(Map<String, Object?> shift);
 
   /// Plays a WAV (Lify's voice) through the phone's media sound; a new one stops the one before.
   Future<void> playAudio(Uint8List wav);
@@ -159,8 +164,8 @@ class MethodChannelNative implements Native {
     'at': atMillis,
     'message': message,
     'card': card,
-    'title': ?title,
-    'open': ?open,
+    if (title != null) 'title': title,
+    if (open != null) 'open': open,
   });
 
   @override
@@ -222,6 +227,10 @@ class MethodChannelNative implements Native {
   @override
   Future<void> setNudgesAsNotifications({required bool on}) =>
       _call<void>('setNudgesAsNotifications', {'on': on});
+
+  @override
+  Future<void> setNudgeBank(Map<String, Object?> shift) =>
+      _call<void>('setNudgeBank', {'shift': jsonEncode(shift)});
 
   @override
   Future<void> playAudio(Uint8List wav) =>

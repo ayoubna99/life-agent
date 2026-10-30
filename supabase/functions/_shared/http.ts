@@ -10,12 +10,14 @@ import type { PdfMakeLoader } from './makepdf.ts';
 import { extractPdfText, isPdf } from './pdf.ts';
 import { parseWav, WavError } from './wav.ts';
 import type { PdfLoader } from './pdf.ts';
-import { isDate } from './plan.ts';
+import { isDate, type PlanData } from './plan.ts';
 import { validateProfile } from './profile.ts';
 import { parseExperimentLog, summarizeExperiments } from './experiments.ts';
 import { parseNights } from './nights.ts';
 import { parseEveningRequest, runEvening } from './evening.ts';
 import { speakableText, synthesize, toBase64, ttsConfigFromEnv } from './tts.ts';
+import { historyText, NIGHT, runCritic, runStudy, usedLines, type StoredShift } from './nightshift.ts';
+import { angleResults } from './experiments.ts';
 import { RestStore, StoreError } from './store.ts';
 import type { Store, UsageRow } from './store.ts';
 
@@ -125,6 +127,60 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
           fetchImpl: env.fetchImpl,
         });
         return json(result);
+      }
+      case 'nightshift': {
+        // Lify's night shift (see nightshift.ts): "study" writes the theories and tomorrow's nudge bank, "critic" cuts the
+        // weak lines, "get" returns the newest shift with how each angle did.
+        const step = body.step ?? 'get';
+        if (step === 'get') {
+          const latest = await store.getNightShift();
+          const events = await store.getExperiments(addDays(new Date().toISOString().slice(0, 10), -14));
+          return json({ shift: latest, angles: angleResults(events) });
+        }
+        const day = body.day;
+        if (!isDate(day)) throw new BadRequest('bad_date');
+        const models = modelsFor('nightshift', (n) => env.get(n));
+        const deps = { models, fetchImpl: env.fetchImpl };
+        if (step === 'study') {
+          const previous = await store.getNightShift();
+          const fresh = previous?.day === day && previous.updated_at && Date.now() - Date.parse(previous.updated_at) < NIGHT.minHoursBetween * 3600_000;
+          if (fresh && body.test !== true) return json({ shift: previous, skipped: 'recent' });
+          await spendQuota(store, limits);
+          const [profile, strategy, nights, events] = await Promise.all([
+            store.getProfile(),
+            store.getStrategy(),
+            store.getNights(day),
+            store.getExperiments(addDays(day, -NIGHT.historyDays)),
+          ]);
+          const plans: { date: string; data: PlanData }[] = [];
+          for (const d of [addDays(day, -2), addDays(day, -1), day]) {
+            const p = await store.getPlan(d);
+            if (p) plans.push({ date: d, data: p.data });
+          }
+          const recent = events.slice(-NIGHT.maxEvents);
+          const history = historyText({ profile, strategy, nights, plans, events: recent, previous });
+          const { shift, model } = await runStudy(history, day, usedLines(recent, previous), profile.name, deps);
+          const stored: StoredShift = { day, status: 'draft', shift, model };
+          await store.saveNightShift(stored);
+          return json({ shift: stored });
+        }
+        if (step === 'critic') {
+          const draft = await store.getNightShift(day);
+          if (!draft) throw new BadRequest('no_draft');
+          if (draft.status === 'final' && body.test !== true) return json({ shift: draft });
+          await spendQuota(store, limits);
+          let shift = draft.shift;
+          try {
+            shift = await runCritic(draft.shift, await store.getProfile(), deps);
+          } catch (e) {
+            if (!(e instanceof MuseError)) throw e;
+            shift = { ...draft.shift, critic: { cut: 0, reasons: ['the critic could not be reached: the draft is used as it is'] } };
+          }
+          const stored: StoredShift = { ...draft, status: 'final', shift };
+          await store.saveNightShift(stored);
+          return json({ shift: stored });
+        }
+        throw new BadRequest('bad_step');
       }
       case 'speak': {
         // Lify's voice (Orpheus on Baseten). Not configured: the phone uses its own voice, no error worth showing.
@@ -288,4 +344,11 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
     console.error('agent: unexpected error');
     return json({ error: { code: 'internal' } }, 500);
   }
+}
+
+/** YYYY-MM-DD plus [n] days. */
+function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }

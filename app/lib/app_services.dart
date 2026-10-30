@@ -10,6 +10,7 @@ import 'chat/chat_controller.dart';
 import 'config.dart';
 import 'device/device_runner.dart';
 import 'device/next_task.dart';
+import 'device/plan_applier.dart';
 import 'device/rules.dart';
 import 'device/stores.dart';
 import 'onboarding/onboarding_store.dart';
@@ -151,6 +152,65 @@ class AppServices {
     upload: api.uploadUsage,
     uploadNights: api.uploadNights,
   );
+
+  late final PlanApplier planApplier = PlanApplier(
+    tasks: tasks,
+    alarms: alarmScheduler,
+    log: alarmLog,
+    native: native,
+  );
+
+  /// Puts a saved plan on the phone right away (tasks, alarms, calendar reminders); safe to call again.
+  Future<void> applyPlan(SavedPlan? plan) async {
+    if (plan == null) return;
+    try {
+      await planApplier.apply(plan, now: now());
+    } catch (_) {
+      // "Start my day" can still do it in the morning
+    }
+  }
+
+  DateTime? _shiftAt;
+
+  /// The night shift: the newest one goes to the watcher; in the evening (20:00 to 04:00) without one for tomorrow,
+  /// Lify runs it now (the study, then the critic). [run] forces a run (the test button; [test] skips the server's
+  /// 6 hour wait). Returns the newest shift, or null.
+  Future<NightShift?> syncNightShift({
+    bool run = false,
+    bool test = false,
+  }) async {
+    final last = _shiftAt;
+    if (!run &&
+        last != null &&
+        DateTime.now().difference(last).inMinutes < 30) {
+      return null;
+    }
+    _shiftAt = DateTime.now();
+    try {
+      var shift = await api.nightShift();
+      final hour = now().hour;
+      final evening = hour >= 20 || hour < 4;
+      if (run || (evening && shift?.day != tomorrow)) {
+        await api.nightShift(step: 'study', day: tomorrow, test: test);
+        shift = await api.nightShift(step: 'critic', day: tomorrow, test: test);
+        shift = await api.nightShift() ?? shift; // with the results per idea
+      }
+      if (shift?.raw != null) await native.setNudgeBank(shift!.raw!);
+      return shift;
+    } catch (_) {
+      _shiftAt = null;
+      return null;
+    }
+  }
+
+  /// "Night shift (test)": runs it now and says what came out.
+  Future<String> testNightShift() async {
+    final s = await syncNightShift(run: true, test: true);
+    if (s == null) {
+      return 'The night shift did not finish (Settings > Check Lify shows why). It can take up to two minutes.';
+    }
+    return 'Night shift done: ${s.theories.length} theories, ${s.angles.length} ideas, ${s.lineCount} fresh lines for ${s.day}.';
+  }
 
   DateTime? _nightsSentAt;
 

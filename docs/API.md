@@ -169,6 +169,21 @@ The agent receives these as known facts and never asks for them.
    sheets about 2 KB; both go to `materials/<user id>/`.
    The phone should shrink photos before uploading (about 1600 px on the long side, JPEG quality 80, which is a few hundred KB).
 
+## action: "nightshift"  (Lify's theories and tomorrow's nudge bank)
+
+- `{"action":"nightshift","step":"study","day":"2026-10-31"}`: Muse Spark Open reads the user's whole history (30 days of
+  nudges with outcomes, nights, plans, the last theories) and writes theories and a nudge bank. It is saved as a
+  "draft". Runs at most once per 6 hours per day (`"test": true` skips the wait). Counts against the daily limit.
+- `{"action":"nightshift","step":"critic","day":"2026-10-31"}`: the critic cuts weak lines. The shift becomes "final";
+  if the critic fails, the draft is used.
+- `{"action":"nightshift"}` (step "get"): `{"shift": {day, status, model, shift: {theories, angles, notes, thinking,
+  critic}}, "angles": [{angle, tried, left, pulled, lines}]}`.
+
+Angles: `{id, name, style: task|cost|goal, bands: [morning|afternoon|evening|night], apps: [], lines: [{id, text}]}`.
+Experiments now also take `angle`, `line_id` and `pulled` ("Pull me out" tapped). Migration `20261103000011_night_shift.sql`.
+
+`schedule_alarm` is now available in every mode and takes `date: "today" | "tomorrow"`.
+
 ## action: "speak"  (Lify's voice)
 
 `{"action":"speak","text":"Jake, forty minutes on TikTok <chuckle>"}` -> `{"audio":"<base64 WAV, 24 kHz mono>","format":"wav","voice":"tara"}`.

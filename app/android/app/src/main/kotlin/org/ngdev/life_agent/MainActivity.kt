@@ -39,7 +39,14 @@ class MainActivity : FlutterActivity() {
 
     /** A notification asked to open a screen ("plan"): kept until the Flutter side takes it. */
     private fun remember(intent: Intent?) {
-        intent?.getStringExtra(EXTRA_OPEN)?.let { pendingOpen = it }
+        val open = intent?.getStringExtra(EXTRA_OPEN) ?: return
+        if (open.startsWith("pull:")) {
+            // "Pull me out" on a nudge: the tap counts in that nudge's result, then Life shows what matters next
+            NativeStore(this).markPulled(open.removePrefix("pull:"))
+            pendingOpen = "pull"
+        } else {
+            pendingOpen = open
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -107,6 +114,10 @@ class MainActivity : FlutterActivity() {
             "stopAudio" -> {
                 player?.let { runCatching { it.stop(); it.release() } }
                 player = null
+                result.success(null)
+            }
+            "setNudgeBank" -> {
+                NativeStore(this).saveBank(org.json.JSONObject(call.argument<String>("shift")!!))
                 result.success(null)
             }
             "setNudgesAsNotifications" -> {

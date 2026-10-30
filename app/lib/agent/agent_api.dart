@@ -40,8 +40,8 @@ class AgentApi {
       'today': today,
       'date': date,
       'locale': locale,
-      'conversation_id': ?conversationId,
-      'report': ?report,
+      if (conversationId != null) 'conversation_id': conversationId,
+      if (report != null) 'report': report,
       'input': input,
     });
     return ChatAnswer.fromJson(json);
@@ -119,6 +119,21 @@ class AgentApi {
   }
 
   /// The experiment totals over the last [days] days.
+  /// The night shift: "get" the newest one, or run "study" then "critic" for [day] ([test] skips the 6 hour wait).
+  Future<NightShift?> nightShift({
+    String step = 'get',
+    String? day,
+    bool test = false,
+  }) async {
+    final json = await _agent({
+      'action': 'nightshift',
+      'step': step,
+      if (day != null) 'day': day,
+      if (test) 'test': true,
+    });
+    return NightShift.fromJson(json['shift'], stats: json['angles']);
+  }
+
   Future<ExperimentResults> experiments({
     required String today,
     int days = 14,

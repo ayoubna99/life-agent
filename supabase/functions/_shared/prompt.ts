@@ -30,7 +30,7 @@ const PLANNING = `## Mode: planning (the night before)
 Plan the day in "plan_date" with the user. The settings in the Context (wake, sleep, distracting apps, focus) are already known: do not ask for them.
 Ask only about what you still need, one or two questions at a time: the tasks they want done, and deadlines or fixed commitments. Use get_usage for their distracting apps to see how much time those really take, and say what you see.
 YOU decide how long each task takes: never ask the user for a duration. Estimate it yourself from the task, the deadline and what the user has told you, state it in one short line, and move on. Change it only if the user objects.
-For each task: break it into a first step they can start in under 5 minutes, and write short step-by-step instructions. Each task must carry EVERYTHING needed when its time comes, because a screen with it opens then: the links you actually opened (a book, an article, a video), the study sheet or picture you made (its link), and in "notes" a short summary of what was decided in the chat (which chapter, which pages, why). Choose "alarm" per task: "phone" for things away from the screen (gym, prayer, leaving home, waking up), "in_app" for things done on a screen (reading, emails, study, writing). For prayer times, ask their city once if you do not know it and look the times up with web_search. Schedule tasks inside the waking hours, not later than an hour before sleep, with breaks.
+For each task: break it into a first step they can start in under 5 minutes, and write short step-by-step instructions. Each task must carry EVERYTHING needed when its time comes, because a screen with it opens then: the links you actually opened (a book, an article, a video), the study sheet or picture you made (its link), and in "notes" a short summary of what was decided in the chat (which chapter, which pages, why). When the plan is saved, the phone itself puts tomorrow's tasks and their alarms on the phone right away (the user does not have to wait for the morning): never call schedule_alarm for the plan's tasks. Only when the user asks for an extra alarm, call schedule_alarm with date "tomorrow" (or "today"). Choose "alarm" per task: "phone" for things away from the screen (gym, prayer, leaving home, waking up), "in_app" for things done on a screen (reading, emails, study, writing). For prayer times, ask their city once if you do not know it and look the times up with web_search. Schedule tasks inside the waking hours, not later than an hour before sleep, with breaks.
 The user may send a link or a document ("memorise this page", "summarise this for tomorrow"): read it with fetch_url or read_document, then call create_material to prepare a short summary or study sheet (a PDF; use format "markdown" only if asked or if the text is not in the Latin alphabet) with the key points (and a few self-test questions if they want to memorise), and add a task such as "Review the sheet" with the returned link. The user may also send a photo (a timetable, a whiteboard, a list): it is already read for you, so open it with read_document like any document, and tell the user if it looks like it was misread. Make a picture with create_image only when the user asks for one or for a shareable card of their day: describe it in plain words, keep any text in it very short, show no real people, and never use it for health claims. Use web_search and fetch_url when a task needs facts or a good resource; add only links you actually opened.
 Call get_calendar for "plan_date" early. Plan around the real events: never put a task over an event, leave about 10 minutes before and after it, and mention a fixed event only when it shapes the plan. If calendar access is off, plan without it and do not ask about it again.
 Choose daily limits for the distracting apps from their real usage (a realistic cut, not zero).
@@ -368,14 +368,15 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
   {
     where: 'device',
-    modes: ['execute'],
-    def: fn('schedule_alarm', 'Set an alarm today at a time of day. kind "phone": a real alarm in the phone\'s Clock app, for things away from the screen (gym, prayer, leaving home). kind "in_app": at that time Life rings and opens the task\'s screen with its links, PDFs, pictures and instructions (reading, emails, study). Give task_title for a task.', {
+    modes: ['planning', 'execute', 'review'],
+    def: fn('schedule_alarm', 'Set an alarm at a time of day, today or tomorrow ("date"). Call it the moment the user asks for an alarm. kind "phone": a real alarm in the phone\'s Clock app, for things away from the screen (gym, prayer, leaving home). kind "in_app": at that time Life rings and opens the task\'s screen with its links, PDFs, pictures and instructions (reading, emails, study). Give task_title for a task.', {
       type: 'object',
       properties: {
         time: HHMM,
         message: { type: 'string', maxLength: 140 },
         kind: { type: 'string', enum: ['in_app', 'phone'] },
         task_title: { type: 'string', maxLength: 120, description: 'The task this alarm is for (its screen opens).' },
+        date: { type: 'string', enum: ['today', 'tomorrow'], description: 'Default today.' },
       },
       required: ['time', 'message', 'kind'],
       additionalProperties: false,

@@ -6,6 +6,7 @@ import type { Profile } from '../supabase/functions/_shared/profile.ts';
 import type { NewDocument, SavedPlan, Store, StoredDocument, UsageRow } from '../supabase/functions/_shared/store.ts';
 import type { Strategy, StrategyData } from '../supabase/functions/_shared/strategy.ts';
 import type { ExperimentEvent } from '../supabase/functions/_shared/experiments.ts';
+import type { StoredShift } from '../supabase/functions/_shared/nightshift.ts';
 import type { PhoneNight } from '../supabase/functions/_shared/nights.ts';
 
 export const SUPABASE_URL = 'https://proj.supabase.co';
@@ -136,6 +137,14 @@ export class MemoryStore implements Store {
   }
   async getNights(upTo: string) {
     return this.nights.filter((n) => n.night <= upTo).sort((a, b) => b.night.localeCompare(a.night)).slice(0, 7);
+  }
+  shifts: StoredShift[] = [];
+  async getNightShift(day?: string) {
+    const list = this.shifts.filter((s) => !day || s.day === day).sort((a, b) => b.day.localeCompare(a.day));
+    return list[0] ? structuredClone(list[0]) : null;
+  }
+  async saveNightShift(s: StoredShift) {
+    this.shifts = [...this.shifts.filter((x) => x.day !== s.day), { ...structuredClone(s), updated_at: new Date().toISOString() }];
   }
 }
 

@@ -11,7 +11,7 @@ import { BASE_PROMPT } from './prompt.ts';
 import type { Store } from './store.ts';
 import { BadRequest, spendQuota } from './loop.ts';
 
-export const NUDGE_LIMITS = { maxDone: 20, maxDoneChars: 120, maxChars: 280, maxTokens: 220, timeoutMs: 10_000, openTimeoutMs: 14_000 };
+export const NUDGE_LIMITS = { maxDone: 20, maxDoneChars: 120, maxChars: 120, maxRecent: 5, maxTokens: 220, timeoutMs: 10_000, openTimeoutMs: 14_000 };
 
 /**
  * 'event': a limited app was opened during a calendar event (a lecture or meeting), where the limit is tighter.
@@ -35,6 +35,8 @@ export interface NudgeRequest {
   done: string[]; // titles of today's tasks already done
   /** Which kind of personal nudge to write (the phone's experiment picks it). */
   style: NudgeStyle;
+  /** The last nudges the phone showed, so this one says something new. */
+  recent: string[];
 }
 
 /**
@@ -48,18 +50,19 @@ export const NUDGE_STYLES: readonly NudgeStyle[] = ['task', 'cost', 'goal'];
 const SESSION_RULE = `They asked you to remind them to "{ask}" whenever they spend {minutes} minutes in a row on an app, and that just happened ("session_minutes"). Remind them of exactly what they asked, in a fresh way each time, and tie it to coming back to their next task or goal if there is one. It is their own choice: no health, fitness or exercise advice, only the reminder.`;
 
 const STYLE_RULES: Record<NudgeStyle, string> = {
-  task: 'Lean on their NEXT TASK: name the specific next task from "next_task", say how long it takes, and give its first step so starting feels tiny. If there is no next task, suggest one small thing from "known_focus".',
-  cost: 'Lean on what the time COSTS: use the real numbers ("minutes_used_today", "limit_minutes", "minutes_until_sleep") and say plainly what that time could be instead, using their next task if there is one (for example: "That is 45 minutes, the length of your German session."). Facts, never guilt.',
-  goal: 'Lean on their OWN GOAL: use "known_focus" in their words, and connect stopping now to it, naming the next task if there is one. If there is no known_focus, use the next task as the goal.',
+  task: 'Lean on their next important task ("next_task"): name it, make starting feel tiny.',
+  cost: 'Lean on what this scrolling costs them tonight or tomorrow (their plan, their sleep time, their goal), without any numbers.',
+  goal: 'Lean on their own goal ("known_focus") in their words. If there is none, use the next task as the goal.',
 };
 
 const NUDGE_PROMPT = `## Mode: nudge (the user is scrolling right now)
-The user is using the app in "app" and has reached the point described in "reason" (approaching their limit, at it, over it, or "event": they opened it during a calendar event such as a lecture or meeting, named in "calendar_event"). Write ONE message they will see on top of that app.
-- At most two short sentences. Plain text only: no markdown, no emoji, no quotes.
-- Personal, never generic: use their first name when you know it (known_first_name), their real numbers, and their own plan or words. Never a sentence that could be sent to anyone.
-- Follow the style rule below.
-- Warm and direct, never guilt, never an order. Mention how long they have been on the app only if it helps.
-- Reply in the user's language.`;
+The user is using the app in "app" and has reached the point described in "reason" (approaching their limit, at it, over it, or "event": they opened it during a calendar event such as a lecture or meeting, named in "calendar_event"). Write ONE line they will see on a card on top of that app. The card's title already shows the minutes.
+- At most 12 words. Plain text: no markdown, no emoji, no quotes.
+- No numbers about minutes, hours or limits, and never "you're at" or "past your limit": the title says that.
+- Never start with their name and a comma. Use the name rarely, if at all.
+- Concrete and personal: their real task, goal, plan or night. Never generic advice ("take a break", "drink water", "rest").
+- Blunt, playful or a dare; never a lecture, never guilt. Different from every line in "recent_nudges".
+- Follow the style rule below. Reply in the user's language.`;
 
 export function parseNudgeRequest(raw: unknown): NudgeRequest {
   const b = raw as Record<string, unknown> | null;
@@ -79,6 +82,11 @@ export function parseNudgeRequest(raw: unknown): NudgeRequest {
   if (b.style !== undefined && !NUDGE_STYLES.includes(b.style as NudgeStyle)) throw new BadRequest('bad_style');
   if (b.event_title !== undefined && (typeof b.event_title !== 'string' || b.event_title.length > 120)) throw new BadRequest('bad_event');
   if (b.locale !== undefined && (typeof b.locale !== 'string' || !/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(b.locale))) throw new BadRequest('bad_locale');
+  let recent: string[] = [];
+  if (b.recent !== undefined) {
+    if (!Array.isArray(b.recent) || b.recent.length > 20 || b.recent.some((d) => typeof d !== 'string')) throw new BadRequest('bad_recent');
+    recent = (b.recent as string[]).slice(-NUDGE_LIMITS.maxRecent).map((d) => d.slice(0, 300));
+  }
   let done: string[] = [];
   if (b.done !== undefined) {
     if (!Array.isArray(b.done) || b.done.length > NUDGE_LIMITS.maxDone || b.done.some((d) => typeof d !== 'string')) throw new BadRequest('bad_done');
@@ -96,6 +104,7 @@ export function parseNudgeRequest(raw: unknown): NudgeRequest {
     ...(b.locale ? { locale: b.locale as string } : {}),
     style: (b.style ?? 'task') as NudgeStyle,
     done,
+    recent,
   };
 }
 
@@ -130,7 +139,10 @@ export async function runNudge(
 ): Promise<{ text: string; task: string | null; style: NudgeStyle; model: ModelLabel }> {
   await spendQuota(deps.store, deps);
   const [plan, profile] = await Promise.all([deps.store.getPlan(req.today), deps.store.getProfile()]);
-  const next = plan ? pickNextTask(plan.data.tasks, req.done, req.now) : null;
+  // a small chore ("drink water") is no reason to leave an app: the next task that matters, if there is one
+  const tasks = plan?.data.tasks ?? [];
+  const meaningful = tasks.filter((t) => t.minutes >= 15);
+  const next = pickNextTask(meaningful.length ? meaningful : tasks, req.done, req.now);
 
   const facts: string[] = [
     `today: ${req.today}`,
@@ -143,6 +155,7 @@ export async function runNudge(
   if (req.event_title) facts.push(`calendar_event: ${JSON.stringify(req.event_title)}`);
   if (req.session_minutes !== undefined) facts.push(`session_minutes: ${req.session_minutes}`);
   if (req.locale) facts.push(`user_language: ${req.locale}`);
+  if (req.recent.length) facts.push(`recent_nudges: ${JSON.stringify(req.recent)}`);
   if (profile.sleep) {
     const left = (toMinutes(profile.sleep) - toMinutes(req.now) + 1440) % 1440;
     facts.push(`known_sleep: ${profile.sleep}`, `minutes_until_sleep: ${left}`);

@@ -50,6 +50,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _refresh();
     s.syncWatcher();
     s.syncNights();
+    _loadShift();
     // opened by an alarm or the evening reminder: go to that screen even if the server cannot be reached
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _openFromNotification(),
@@ -69,7 +70,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _refresh();
       s.syncNights();
+      _loadShift();
       _openFromNotification(); // an alarm or the evening reminder brought the app to the front
+    }
+  }
+
+  NightShift? _shift;
+
+  Future<void> _loadShift({bool force = false}) async {
+    try {
+      final shift = force
+          ? await s.api.nightShift()
+          : await s.syncNightShift() ?? _shift;
+      if (mounted && shift != null) setState(() => _shift = shift);
+    } catch (_) {
+      // the card says the first night shift runs tonight
     }
   }
 
@@ -80,9 +95,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     int? screen;
     if (usageOk) {
       try {
+        // screen time is counted from midnight, by the clock (the plan's day runs until 05:00, screen time does not)
         final rows = await s.native.usageSummary(days: 1);
+        final midnight = isoDate(DateTime.now());
         screen = rows
-            .where((r) => r.day == s.today)
+            .where((r) => r.day == midnight)
             .fold<int>(0, (sum, r) => sum + r.minutes);
       } catch (_) {
         // no number today: the tile says so
@@ -100,6 +117,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final profile = await s.api.profile();
       final tomorrow = await s.api.plan(s.tomorrow);
       final today = await s.api.plan(s.today);
+      // a plan goes on the phone as soon as it exists (alarms set the night before, not in the morning)
+      await s.applyPlan(today);
+      await s.applyPlan(tomorrow);
+      _todayOnPhone = today != null && await s.planApplier.applied(today);
       if (mounted) {
         setState(() {
           _profile = profile;
@@ -131,6 +152,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } catch (_) {}
     if (!mounted || action == null) return;
     if (action == 'plan') _planTomorrow();
+    if (action == 'pull') {
+      // "Pull me out" on a nudge: Life opens on what matters next
+      final next = nextTask(await s.tasks.forDate(s.today), s.now());
+      if (!mounted) return;
+      if (next != null) {
+        _openTask(next);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You\'re out. Good call.')),
+        );
+      }
+    }
     if (action.startsWith('task:')) {
       final id = action.substring(5);
       final task = (await s.tasks.forDate(
@@ -216,8 +249,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _refresh();
   }
 
-  void _startDay() =>
-      _openChat('Start my day', s.executeChat, first: 'Apply today\'s plan.');
+  bool _todayOnPhone = false;
+
+  void _startDay() => _openChat(
+    'Start my day',
+    s.executeChat,
+    first: _todayOnPhone
+        ? 'Apply today\'s plan. Its tasks and alarms are already on the phone since last night: only set the app limits.'
+        : 'Apply today\'s plan.',
+  );
 
   void _planTomorrow() => _openChat(
     'Plan tomorrow',
@@ -340,6 +380,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           subtitle: 'Your tasks show up in the morning.',
         ),
       const _SectionTitle(title: 'Lify is learning'),
+      NightShiftCard(
+        shift: _shift,
+        onOpen: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => NightShiftPage(shift: _shift!),
+          ),
+        ),
+      ),
       if (_strategies.isNotEmpty)
         StrategyCard(strategy: _strategies.first, onOpen: _openStrategy),
       ExperimentCard(
@@ -365,6 +413,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onNext: () => _say(s.testNextTask),
         onEvening: () => _say(s.testEvening),
         onCard: () => _say(() => s.testNudgeCard(distracting: _profile.apps)),
+        onShift: () => _say(() async {
+          final r = await s.testNightShift();
+          await _loadShift(force: true);
+          return r;
+        }),
       ),
     ];
 
@@ -1462,11 +1515,13 @@ class _TestTools extends StatelessWidget {
     required this.onNext,
     required this.onCard,
     required this.onEvening,
+    required this.onShift,
   });
 
   final VoidCallback onNext;
   final VoidCallback onCard;
   final VoidCallback onEvening;
+  final VoidCallback onShift;
 
   @override
   Widget build(BuildContext context) {
@@ -1498,6 +1553,12 @@ class _TestTools extends StatelessWidget {
               onPressed: onCard,
               icon: const Icon(Icons.layers_outlined, size: 18),
               label: const Text('Nudge card (test)'),
+            ),
+            OutlinedButton.icon(
+              key: const Key('test-shift'),
+              onPressed: onShift,
+              icon: const Icon(Icons.biotech_rounded, size: 18),
+              label: const Text('Night shift (test)'),
             ),
           ],
         ),

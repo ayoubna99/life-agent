@@ -208,4 +208,7 @@ data class ExperimentResult(
     val propensity: Double,
     val band: Band,
     val message: String,
+    val angle: String? = null,
+    val lineId: String? = null,
+    val pulled: Boolean = false,
 )

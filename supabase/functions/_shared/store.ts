@@ -2,6 +2,7 @@
 // RestStore talks to Supabase with the CALLER'S token, so row-level security applies to every call.
 
 import type { ChatMessage } from './muse.ts';
+import type { StoredShift } from './nightshift.ts';
 import type { PlanData } from './plan.ts';
 import { toHHMM, toMinutes } from './profile.ts';
 import type { Profile } from './profile.ts';
@@ -71,6 +72,9 @@ export interface Store {
   upsertNights(nights: PhoneNight[]): Promise<void>;
   /** The last 7 nights up to and including `upTo` (YYYY-MM-DD), newest first. */
   getNights(upTo: string): Promise<PhoneNight[]>;
+  /** The night shift for `day`, or the newest one when `day` is omitted. */
+  getNightShift(day?: string): Promise<StoredShift | null>;
+  saveNightShift(s: StoredShift): Promise<void>;
 }
 
 export interface NewDocument {
@@ -357,6 +361,9 @@ export class RestStore implements Store {
         propensity: e.propensity ?? null,
         context: e.context ?? null,
         message: e.message ?? null,
+        angle: e.angle ?? null,
+        line_id: e.line_id ?? null,
+        pulled: e.pulled === true,
       })),
       headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
     });
@@ -365,7 +372,7 @@ export class RestStore implements Store {
   async getExperiments(since: string): Promise<ExperimentEvent[]> {
     const rows = (await this.rest(
       'experiments',
-      `experiments?day=gte.${encodeURIComponent(since)}&select=event_id,day,local_time,app,arm,explore,reason,left_app,seconds_after,window_seconds,demo,propensity,context,message&order=id.asc&limit=1000`,
+      `experiments?day=gte.${encodeURIComponent(since)}&select=event_id,day,local_time,app,arm,explore,reason,left_app,seconds_after,window_seconds,demo,propensity,context,message,angle,line_id,pulled&order=id.asc&limit=1000`,
     )) as Record<string, unknown>[];
     return rows.map((r) => ({
       id: r.event_id as string,
@@ -382,6 +389,9 @@ export class RestStore implements Store {
       ...(typeof r.propensity === 'number' ? { propensity: r.propensity } : {}),
       ...(typeof r.context === 'string' ? { context: r.context as ExperimentEvent['context'] } : {}),
       ...(typeof r.message === 'string' ? { message: r.message } : {}),
+      ...(typeof r.angle === 'string' ? { angle: r.angle } : {}),
+      ...(typeof r.line_id === 'string' ? { line_id: r.line_id } : {}),
+      ...(r.pulled === true ? { pulled: true } : {}),
     }));
   }
 
@@ -400,5 +410,19 @@ export class RestStore implements Store {
       `phone_nights?night=lte.${encodeURIComponent(upTo)}&select=night,down_at,up_at&order=night.desc&limit=7`,
     )) as { night: string; down_at: string; up_at: string | null }[];
     return rows.map((r) => ({ night: r.night, down: r.down_at, ...(r.up_at ? { up: r.up_at } : {}) }));
+  }
+
+  async getNightShift(day?: string): Promise<StoredShift | null> {
+    const where = day ? `day=eq.${encodeURIComponent(day)}&` : '';
+    const rows = (await this.rest('night_shift', `night_shifts?${where}select=day,status,shift,model,updated_at&order=day.desc&limit=1`)) as StoredShift[];
+    return rows[0] ?? null;
+  }
+
+  async saveNightShift(s: StoredShift): Promise<void> {
+    await this.rest('night_shift', 'night_shifts?on_conflict=user_id,day', {
+      method: 'POST',
+      json: { user_id: this.c.userId, day: s.day, status: s.status, shift: s.shift, model: s.model, updated_at: new Date().toISOString() },
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    });
   }
 }

@@ -437,7 +437,9 @@ class _LabTile extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            e.label[0].toUpperCase() + e.label.substring(1),
+            e.angle != null
+                ? 'Angle: ${e.angle!.replaceAll('_', ' ')}'
+                : e.label[0].toUpperCase() + e.label.substring(1),
             style: t.titleSmall,
           ),
           Text(why, style: t.bodySmall),
@@ -472,9 +474,11 @@ class _LabTile extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  e.left
-                      ? 'You left the app. This style gets picked more here.'
-                      : 'You stayed $mins. This style gets picked less here; trying others.',
+                  e.pulled
+                      ? 'You tapped Pull me out. This idea comes back, in new words.'
+                      : e.left
+                      ? 'You left the app. This idea gets picked more here.'
+                      : 'You stayed $mins. This idea gets picked less here; trying others.',
                   style: t.bodyMedium,
                 ),
               ),
@@ -776,4 +780,213 @@ class _Badge extends StatelessWidget {
       ),
     ),
   );
+}
+
+String _statusLabel(String s) => switch (s) {
+  'kept' => 'kept',
+  'rejected' => 'rejected',
+  _ => 'testing',
+};
+
+/// The night shift on the home screen: Lify's theories about you and tomorrow's experiment. Tap for everything.
+class NightShiftCard extends StatelessWidget {
+  const NightShiftCard({super.key, required this.shift, this.onOpen});
+
+  final NightShift? shift;
+  final VoidCallback? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final s = shift;
+    return Pressable(
+      key: const Key('night-shift-card'),
+      onTap: s == null ? null : onOpen,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Brand.dusk,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.biotech_rounded, color: Brand.peach, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Lify\'s theories about you',
+                    style: t.titleMedium?.copyWith(color: Brand.cream),
+                  ),
+                ),
+                if (s != null)
+                  const Icon(Icons.chevron_right_rounded, color: Brand.peach),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (s == null)
+              Text(
+                'Every night Lify studies everything it knows about you, forms theories about what gets you off your phone, '
+                'and writes tomorrow\'s experiment. The first night shift runs this evening.',
+                style: t.bodyMedium?.copyWith(color: Brand.peach),
+              )
+            else ...[
+              for (final th
+                  in s.theories.where((x) => x.status != 'rejected').take(2))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _TheoryLine(theory: th, dark: true),
+                ),
+              Text(
+                '${s.angles.length} ideas and ${s.lineCount} fresh lines ready for ${s.day}'
+                '${s.cut > 0 ? ' · the critic cut ${s.cut}' : ''}',
+                style: t.bodySmall?.copyWith(color: Brand.peach),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TheoryLine extends StatelessWidget {
+  const _TheoryLine({required this.theory, this.dark = false});
+
+  final Theory theory;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final color = dark ? Brand.cream : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                theory.statement,
+                style: t.bodyLarge?.copyWith(color: color),
+              ),
+            ),
+            const SizedBox(width: 8),
+            _Badge(
+              '${_statusLabel(theory.status)} · ${(theory.confidence * 100).round()}%',
+            ),
+          ],
+        ),
+        if (theory.evidence.isNotEmpty)
+          Text(
+            theory.evidence,
+            style: t.bodySmall?.copyWith(color: dark ? Brand.peach : null),
+          ),
+      ],
+    );
+  }
+}
+
+/// Everything from the newest night shift: the theories (kept, testing, rejected), tomorrow's ideas with their lines
+/// and results, and a short excerpt of how the open model reasoned about it.
+class NightShiftPage extends StatelessWidget {
+  const NightShiftPage({super.key, required this.shift});
+
+  final NightShift shift;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final t = theme.textTheme;
+    final s = shift;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Night shift')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+        children: cascade([
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Brand.dusk,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Text(
+              'Every night Muse Spark Open reads your whole history at once: every nudge, what you did next, your nights '
+              'and plans. It keeps or drops its theories, then writes tomorrow\'s lines; a second pass, your inner skeptic, '
+              'cuts the weak ones. During the day your phone picks the idea that works best for you right now and shows a '
+              'line you have never seen.',
+              style: t.bodyMedium?.copyWith(color: Brand.peach),
+            ),
+          ),
+          if (s.notes.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(s.notes, key: const Key('night-notes'), style: t.bodyLarge),
+          ],
+          const SizedBox(height: 20),
+          Text('Theories', style: t.headlineSmall),
+          const SizedBox(height: 10),
+          for (final th in s.theories)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _TheoryLine(theory: th),
+            ),
+          const SizedBox(height: 12),
+          Text('Ideas for ${s.day}', style: t.headlineSmall),
+          const SizedBox(height: 10),
+          for (final a in s.angles)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: theme.cardTheme.color,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.6,
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(a.name, style: t.titleSmall),
+                  Text(
+                    a.tried == 0
+                        ? 'New: not tried yet'
+                        : 'You left ${a.left} of ${a.tried} times',
+                    style: t.bodySmall,
+                  ),
+                  const SizedBox(height: 6),
+                  for (final l in a.lines)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('"$l"', style: t.bodyMedium),
+                    ),
+                ],
+              ),
+            ),
+          if (s.thinking != null) ...[
+            const SizedBox(height: 12),
+            ExpansionTile(
+              key: const Key('night-thinking'),
+              tilePadding: EdgeInsets.zero,
+              title: const Text('How Lify thought about it'),
+              subtitle: const Text(
+                'The open model\'s own reasoning, an excerpt',
+              ),
+              children: [
+                Text(
+                  s.thinking!,
+                  style: t.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+                ),
+              ],
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
 }

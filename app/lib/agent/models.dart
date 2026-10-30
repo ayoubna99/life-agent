@@ -119,6 +119,8 @@ class PlanTask {
     this.instructions = const [],
     this.links = const [],
     this.startTime,
+    this.notes,
+    this.alarm,
   });
 
   final String title;
@@ -127,6 +129,10 @@ class PlanTask {
   final List<String> instructions;
   final List<String> links;
   final String? startTime;
+  final String? notes;
+
+  /// "phone" (a real alarm in the Clock app) or "in_app" (Life opens the task's screen).
+  final String? alarm;
 
   factory PlanTask.fromJson(Map<String, Object?> j) => PlanTask(
     title: j['title'] as String,
@@ -137,6 +143,8 @@ class PlanTask {
     ],
     links: [for (final s in (j['links'] as List? ?? const [])) s as String],
     startTime: j['start_time'] as String?,
+    notes: j['notes'] as String?,
+    alarm: j['alarm'] as String?,
   );
 }
 
@@ -283,7 +291,11 @@ class PhoneNight {
   final String down; // HH:MM
   final String? up;
 
-  Map<String, Object?> toJson() => {'night': night, 'down': down, 'up': ?up};
+  Map<String, Object?> toJson() => {
+    'night': night,
+    'down': down,
+    if (up != null) 'up': up,
+  };
 }
 
 /// Minutes after the evening's 18:00, so 23:30 < 01:10 < 03:00 compare the way a night runs.
@@ -546,7 +558,15 @@ class LabEntry {
     this.propensity,
     this.message,
     this.demo = false,
+    this.angle,
+    this.pulled = false,
   });
+
+  /// The night shift's angle this line came from (null: written live).
+  final String? angle;
+
+  /// The user tapped "Pull me out".
+  final bool pulled;
 
   final String day;
   final String time;
@@ -571,6 +591,8 @@ class LabEntry {
     explore: j['explore'] == true,
     propensity: (j['propensity'] as num?)?.toDouble(),
     message: j['message'] as String?,
+    angle: j['angle'] as String?,
+    pulled: j['pulled'] == true,
     left: j['left'] == true,
     minutesAfter: (j['minutes_after'] as num?)?.toDouble() ?? 0,
     demo: j['demo'] == true,
@@ -600,4 +622,111 @@ class CalendarEntry {
     if (allDay) 'all_day': true,
     if (!busy) 'free': true,
   };
+}
+
+/// One of Lify's theories about what gets this person off their phone (written by the night shift, checked every night).
+class Theory {
+  const Theory({
+    required this.statement,
+    required this.confidence,
+    required this.status,
+    required this.evidence,
+    this.angle,
+  });
+
+  final String statement;
+  final double confidence; // 0..1
+  final String status; // testing, kept, rejected
+  final String evidence;
+  final String? angle;
+
+  factory Theory.fromJson(Map<String, Object?> j) => Theory(
+    statement: j['statement'] as String,
+    confidence: (j['confidence'] as num?)?.toDouble() ?? 0.5,
+    status: j['status'] as String? ?? 'testing',
+    evidence: j['evidence'] as String? ?? '',
+    angle: j['angle'] as String?,
+  );
+}
+
+/// An angle of tomorrow's nudge bank, with how its lines did so far.
+class BankAngleView {
+  const BankAngleView({
+    required this.id,
+    required this.name,
+    required this.lines,
+    this.tried = 0,
+    this.left = 0,
+  });
+
+  final String id;
+  final String name;
+  final List<String> lines;
+  final int tried;
+  final int left;
+}
+
+/// The newest night shift: theories, tomorrow's bank, and how Lify thought about it.
+class NightShift {
+  const NightShift({
+    required this.day,
+    required this.status,
+    required this.theories,
+    required this.angles,
+    this.notes = '',
+    this.thinking,
+    this.cut = 0,
+    this.raw,
+  });
+
+  final String day;
+  final String status; // draft, final
+  final List<Theory> theories;
+  final List<BankAngleView> angles;
+  final String notes;
+  final String? thinking;
+
+  /// Lines the critic threw out.
+  final int cut;
+
+  /// The stored shift as the server sent it (handed to the phone's watcher as is).
+  final Map<String, Object?>? raw;
+
+  int get lineCount => angles.fold(0, (n, a) => n + a.lines.length);
+
+  static NightShift? fromJson(Object? stored, {Object? stats}) {
+    if (stored is! Map) return null;
+    final s = Map<String, Object?>.from(stored);
+    final shift = Map<String, Object?>.from(s['shift'] as Map? ?? const {});
+    final byAngle = <String, Map>{
+      for (final a in (stats as List? ?? const []))
+        if (a is Map) a['angle'] as String: a,
+    };
+    return NightShift(
+      day: s['day'] as String,
+      status: s['status'] as String? ?? 'draft',
+      theories: [
+        for (final t in (shift['theories'] as List? ?? const []))
+          Theory.fromJson(Map<String, Object?>.from(t as Map)),
+      ],
+      angles: [
+        for (final a in (shift['angles'] as List? ?? const []))
+          if (a is Map)
+            BankAngleView(
+              id: a['id'] as String,
+              name: a['name'] as String? ?? a['id'] as String,
+              lines: [
+                for (final l in (a['lines'] as List? ?? const []))
+                  (l as Map)['text'] as String,
+              ],
+              tried: (byAngle[a['id']]?['tried'] as num?)?.toInt() ?? 0,
+              left: (byAngle[a['id']]?['left'] as num?)?.toInt() ?? 0,
+            ),
+      ],
+      notes: shift['notes'] as String? ?? '',
+      thinking: shift['thinking'] as String?,
+      cut: ((shift['critic'] as Map?)?['cut'] as num?)?.toInt() ?? 0,
+      raw: s,
+    );
+  }
 }

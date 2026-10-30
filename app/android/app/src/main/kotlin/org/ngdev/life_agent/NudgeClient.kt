@@ -52,6 +52,7 @@ class NudgeClient(private val store: NativeStore) {
             .put("style", style)
             .put("locale", store.locale)
             .put("done", JSONArray(store.doneTitles(day).take(20)))
+            .put("recent", JSONArray(store.recentNudges().filter { it.isNotBlank() }.distinct().takeLast(5)))
         if (limit != null) body.put("limit_minutes", limit)
         if (eventTitle != null) body.put("event_title", eventTitle.take(120))
         if (ask != null) body.put("ask", ask.take(120))
@@ -96,6 +97,24 @@ class NudgeClient(private val store: NativeStore) {
             }
         }
         return null
+    }
+
+    /**
+     * The night shift (see the server's nightshift.ts): "study" then "critic" for [day], or "get" for the newest one.
+     * Returns the stored shift ({"day", "status", "shift"}) or null. The study may think for up to two minutes.
+     */
+    fun nightShift(step: String, day: String?): JSONObject? {
+        val base = store.baseUrl ?: return null
+        val key = store.apiKey ?: return null
+        val token = freshToken(base, key) ?: return null
+        val body = JSONObject().put("action", "nightshift").put("step", step)
+        if (day != null) body.put("day", day)
+        return try {
+            val (status, text) = post("$base/functions/v1/agent", key, token, body.toString(), if (step == "study") 150_000 else 60_000)
+            if (status != 200) null else JSONObject(text).optJSONObject("shift")
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** Sends the finished experiment results waiting on the phone (at most 50 at a time). Returns how many were stored. */

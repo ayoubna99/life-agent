@@ -38,6 +38,11 @@ export interface ExperimentEvent {
   context?: Band;
   /** The words Muse Spark wrote for this nudge (the lab notebook shows them). */
   message?: string;
+  /** The night shift's angle this nudge tested (the idea behind the words), and the exact line used. */
+  angle?: string;
+  line_id?: string;
+  /** The user tapped "Pull me out" on the card. */
+  pulled?: boolean;
 }
 
 export type Band = 'morning' | 'afternoon' | 'evening' | 'night';
@@ -46,6 +51,7 @@ export const BANDS: readonly Band[] = ['morning', 'afternoon', 'evening', 'night
 export const EXPERIMENT_LIMITS = { maxEvents: 50, minTries: 3, draws: 4000, bestProbability: 0.75, minForPolicy: 10, bootstrap: 500, logSize: 40 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ID = /^[a-z0-9_-]{1,60}$/;
 
 export function parseExperimentLog(raw: unknown): ExperimentEvent[] {
   if (!Array.isArray(raw) || raw.length > EXPERIMENT_LIMITS.maxEvents) throw new BadRequest('bad_experiments');
@@ -63,7 +69,10 @@ export function parseExperimentLog(raw: unknown): ExperimentEvent[] {
       (r.seconds_after as number) <= (r.window_seconds as number) &&
       (r.propensity === undefined || (typeof r.propensity === 'number' && r.propensity > 0 && r.propensity <= 1)) &&
       (r.context === undefined || BANDS.includes(r.context as Band)) &&
-      (r.message === undefined || (typeof r.message === 'string' && r.message.length <= 300));
+      (r.message === undefined || (typeof r.message === 'string' && r.message.length <= 300)) &&
+      (r.angle === undefined || (typeof r.angle === 'string' && ID.test(r.angle) && r.angle.length <= 40)) &&
+      (r.line_id === undefined || (typeof r.line_id === 'string' && ID.test(r.line_id))) &&
+      (r.pulled === undefined || typeof r.pulled === 'boolean');
     if (!ok) throw new BadRequest('bad_experiments');
     seen.add(r.id as string);
     return {
@@ -81,6 +90,9 @@ export function parseExperimentLog(raw: unknown): ExperimentEvent[] {
       ...(r.propensity !== undefined ? { propensity: r.propensity as number } : {}),
       ...(r.context !== undefined ? { context: r.context as Band } : {}),
       ...(typeof r.message === 'string' && r.message.trim() ? { message: r.message.trim() } : {}),
+      ...(typeof r.angle === 'string' ? { angle: r.angle } : {}),
+      ...(typeof r.line_id === 'string' ? { line_id: r.line_id } : {}),
+      ...(r.pulled === true ? { pulled: true } : {}),
     };
   });
 }
@@ -112,6 +124,8 @@ export interface ExperimentSummary {
   contexts: ContextResult[];
   /** The newest nudges, newest first: what was sent, why, and what the user did next (the lab notebook). */
   log: LogEntry[];
+  /** Per night-shift angle: how often its lines made the user leave, and how many different lines were used. */
+  angles: AngleResult[];
   note: string;
 }
 
@@ -140,6 +154,14 @@ export interface ContextResult {
   leading: Arm | null;
 }
 
+export interface AngleResult {
+  angle: string;
+  tried: number;
+  left: number;
+  pulled: number;
+  lines: number;
+}
+
 export interface LogEntry {
   day: string;
   time: string;
@@ -150,6 +172,8 @@ export interface LogEntry {
   explore: boolean;
   propensity: number | null;
   message: string | null;
+  angle: string | null;
+  pulled: boolean;
   left: boolean;
   minutes_after: number;
   demo: boolean;
@@ -256,6 +280,7 @@ export function summarizeExperiments(events: ExperimentEvent[]): ExperimentSumma
     hits_by_hour: [...hours].map(([hour, hits]) => ({ hour, hits })).sort((a, b) => b.hits - a.hits || a.hour.localeCompare(b.hour)).slice(0, 6),
     policy,
     contexts: contextResults(events),
+    angles: angleResults(events),
     log: [...events].reverse().slice(0, EXPERIMENT_LIMITS.logSize).map((e) => ({
       day: e.day,
       time: e.time,
@@ -266,6 +291,8 @@ export function summarizeExperiments(events: ExperimentEvent[]): ExperimentSumma
       explore: e.explore,
       propensity: e.propensity ?? null,
       message: e.message ?? null,
+      angle: e.angle ?? null,
+      pulled: e.pulled === true,
       left: e.left,
       minutes_after: Math.round(e.seconds_after / 6) / 10,
       demo: e.demo,
@@ -338,6 +365,18 @@ export function evaluatePolicy(all: ExperimentEvent[]): PolicyEvaluation | null 
     lift_interval: interval,
     note: 'Estimated with self-normalised inverse propensity weighting from the logged choice probabilities. An estimate from one person, not proof; a wide interval means not enough data yet.',
   };
+}
+
+export function angleResults(events: ExperimentEvent[]): AngleResult[] {
+  const groups = new Map<string, ExperimentEvent[]>();
+  for (const e of events) if (e.angle) groups.set(e.angle, [...(groups.get(e.angle) ?? []), e]);
+  return [...groups].map(([angle, list]) => ({
+    angle,
+    tried: list.length,
+    left: list.filter((e) => e.left).length,
+    pulled: list.filter((e) => e.pulled).length,
+    lines: new Set(list.map((e) => e.line_id ?? e.message ?? '')).size,
+  })).sort((a, b) => b.tried - a.tried);
 }
 
 function contextResults(events: ExperimentEvent[]): ContextResult[] {

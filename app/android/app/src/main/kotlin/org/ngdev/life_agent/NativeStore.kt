@@ -5,6 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.ngdev.life_agent.core.Arm
 import org.ngdev.life_agent.core.ArmStat
+import org.ngdev.life_agent.core.BankAngle
+import org.ngdev.life_agent.core.BankLine
 import org.ngdev.life_agent.core.Band
 import org.ngdev.life_agent.core.ExperimentResult
 import org.ngdev.life_agent.core.InstalledApp
@@ -148,11 +150,83 @@ class NativeStore(context: Context) {
         prefs.edit().putString("armStats2", all.toString()).apply()
     }
 
+    // ---- the night shift's nudge bank ----
+
+    /** Saves the newest night shift from the server ({"day", "shift": {"angles": [...]}}). */
+    fun saveBank(stored: JSONObject) {
+        prefs.edit().putString("bank", stored.toString()).putString("bankDay", stored.optString("day")).apply()
+    }
+
+    val bankDay: String? get() = prefs.getString("bankDay", null)
+
+    fun bank(): List<BankAngle> = try {
+        val angles = JSONObject(prefs.getString("bank", "{}")!!).getJSONObject("shift").getJSONArray("angles")
+        (0 until angles.length()).map { angles.getJSONObject(it) }.map { a ->
+            val lines = a.getJSONArray("lines")
+            val bands = a.optJSONArray("bands")
+            BankAngle(
+                a.getString("id"), a.optString("name"), Arm.of(a.optString("style")) ?: Arm.GOAL,
+                (0 until (bands?.length() ?: 0)).mapNotNull { Band.of(bands!!.getString(it)) }.toSet().ifEmpty { Band.values().toSet() },
+                a.optJSONArray("apps")?.let { x -> (0 until x.length()).map { x.getString(it) } } ?: emptyList(),
+                (0 until lines.length()).map { lines.getJSONObject(it) }.map { BankLine(it.getString("id"), it.getString("text")) },
+            )
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /** Lines already shown (never shown again), the newest 400. */
+    fun seenLines(): Set<String> = runCatching {
+        val arr = JSONArray(prefs.getString("seenLines", "[]"))
+        (0 until arr.length()).map { arr.getString(it) }.toSet()
+    }.getOrDefault(emptySet())
+
+    fun addSeen(lineId: String) {
+        val arr = runCatching { JSONArray(prefs.getString("seenLines", "[]")) }.getOrDefault(JSONArray()).put(lineId)
+        val keep = JSONArray()
+        for (i in maxOf(0, arr.length() - 400) until arr.length()) keep.put(arr.get(i))
+        prefs.edit().putString("seenLines", keep.toString()).apply()
+    }
+
+    /** Results per angle over all moments ([context] null) or for one app and time of day. */
+    fun angleStats(context: String? = null): Map<String, ArmStat> = try {
+        val o = JSONObject(prefs.getString("angleStats", "{}")!!).optJSONObject(context ?: "*") ?: JSONObject()
+        o.keys().asSequence().associateWith { k -> ArmStat(o.getJSONObject(k).getInt("t"), o.getJSONObject(k).getInt("l")) }
+    } catch (e: Exception) {
+        emptyMap()
+    }
+
+    fun recordAngle(angle: String, left: Boolean, context: String) {
+        val all = runCatching { JSONObject(prefs.getString("angleStats", "{}")!!) }.getOrDefault(JSONObject())
+        for (key in listOf("*", context)) {
+            val o = all.optJSONObject(key) ?: JSONObject()
+            val s = o.optJSONObject(angle) ?: JSONObject().put("t", 0).put("l", 0)
+            o.put(angle, s.put("t", s.getInt("t") + 1).put("l", s.getInt("l") + if (left) 1 else 0))
+            all.put(key, o)
+        }
+        prefs.edit().putString("angleStats", all.toString()).apply()
+    }
+
+    /** The words of the last nudges shown, so a live nudge says something new. */
+    fun recentNudges(): List<String> = pending().takeLast(5).map { it.message } +
+        runCatching { val u = unsent(); (maxOf(0, u.length() - 5) until u.length()).map { u.getJSONObject(it).optString("message") } }.getOrDefault(emptyList())
+
+    /** The user tapped "Pull me out" on the nudge [pendingId]. */
+    fun markPulled(pendingId: String) {
+        savePending(pending().map { if (it.id == pendingId) it.copy(pulled = true) else it })
+    }
+
+    /** When the phone last tried the night shift or fetched the bank (so it does not try again every tick). */
+    var lastShiftTryAt: Long
+        get() = prefs.getLong("lastShiftTryAt", 0L)
+        set(v) = prefs.edit().putLong("lastShiftTryAt", v).apply()
+
     /** An intervention whose outcome is not measured yet. */
     data class Pending(
         val id: String, val pkg: String, val app: String, val arm: Arm, val explore: Boolean, val reason: NudgeReason,
         val atMs: Long, val day: String, val time: String, val windowMs: Long, val leftWithinMs: Long, val demo: Boolean,
         val propensity: Double, val band: Band, val message: String,
+        val angle: String? = null, val lineId: String? = null, val pulled: Boolean = false,
     )
 
     fun pending(): List<Pending> = try {
@@ -163,6 +237,7 @@ class NativeStore(context: Context) {
                 NudgeReason.values().first { r -> r.wire == it.getString("reason") }, it.getLong("at"), it.getString("day"), it.getString("time"),
                 it.getLong("window"), it.getLong("leftWithin"), it.getBoolean("demo"),
                 it.optDouble("propensity", 1.0), Band.of(it.optString("band")) ?: Band.NIGHT, it.optString("message"),
+                it.optString("angle").takeIf { a -> a.isNotEmpty() }, it.optString("line").takeIf { l -> l.isNotEmpty() }, it.optBoolean("pulled", false),
             )
         }
     } catch (e: Exception) {
@@ -176,7 +251,8 @@ class NativeStore(context: Context) {
                 JSONObject().put("id", p.id).put("pkg", p.pkg).put("app", p.app).put("arm", p.arm.wire).put("explore", p.explore)
                     .put("reason", p.reason.wire).put("at", p.atMs).put("day", p.day).put("time", p.time).put("window", p.windowMs)
                     .put("leftWithin", p.leftWithinMs).put("demo", p.demo)
-                    .put("propensity", p.propensity).put("band", p.band.wire).put("message", p.message),
+                    .put("propensity", p.propensity).put("band", p.band.wire).put("message", p.message)
+                    .put("angle", p.angle ?: "").put("line", p.lineId ?: "").put("pulled", p.pulled),
             )
         }
         prefs.edit().putString("pending", arr.toString()).apply()
@@ -192,7 +268,12 @@ class NativeStore(context: Context) {
                 JSONObject().put("id", r.id).put("day", r.day).put("time", r.time).put("app", r.app.take(60)).put("arm", r.arm.wire)
                     .put("explore", r.explore).put("reason", r.reason.wire).put("left", r.left).put("seconds_after", r.secondsAfter)
                     .put("window_seconds", r.windowSeconds).put("demo", r.demo)
-                    .put("propensity", Math.round(r.propensity * 10000) / 10000.0).put("context", r.band.wire).put("message", r.message.take(300)),
+                    .put("propensity", Math.round(r.propensity * 10000) / 10000.0).put("context", r.band.wire).put("message", r.message.take(300))
+                    .apply {
+                        if (r.angle != null) put("angle", r.angle)
+                        if (r.lineId != null) put("line_id", r.lineId)
+                        if (r.pulled) put("pulled", true)
+                    },
             )
         }
         val keep = JSONArray()

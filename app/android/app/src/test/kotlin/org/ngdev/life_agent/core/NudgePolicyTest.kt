@@ -27,18 +27,27 @@ class NudgePolicyTest {
         assertNull(decide(26, sent = mapOf(first.key to first.value)))
     }
 
-    @Test fun limitReachedOnceThenQuietUntilTenMoreMinutes() {
+    @Test fun limitReachedOnceThenOnlyAt15_45And105MinutesOver() {
         val limit = decide(30)!!
         assertEquals(NudgeReason.LIMIT, limit.reason)
         val sent = mapOf(limit.key to limit.value)
-        assertNull(decide(35, sent = sent))
-        assertNull(decide(39, sent = sent))
-        val over = decide(40, sent = sent)!!
+        assertNull(decide(44, sent = sent))
+        val over = decide(45, sent = sent)!!
         assertEquals(NudgeReason.OVER, over.reason)
-        assertEquals(40L, over.value)
+        assertEquals(1L, over.value)
         val sent2 = sent + (over.key to over.value)
-        assertNull(decide(49, sent = sent2))
-        assertEquals(NudgeReason.OVER, decide(50, sent = sent2)?.reason)
+        assertNull(decide(74, sent = sent2))
+        val over2 = decide(75, sent = sent2)!!
+        val sent3 = sent2 + (over2.key to over2.value)
+        assertNull(decide(134, sent = sent3))
+        assertEquals(NudgeReason.OVER, decide(135, sent = sent3)?.reason)
+        // limit + three times over = four: that is all for this app today
+        assertNull(decide(500, sent = sent3 + (over.key to 3L)))
+    }
+
+    @Test fun atMostFourADayPerApp() {
+        val sent = mapOf("$day|tiktok|approaching" to now, "$day|tiktok|limit" to now, "$day|tiktok|over" to 2L)
+        assertNull(decide(200, sent = sent))
     }
 
     @Test fun jumpingStraightPastTheLimitStillGivesOneLimitNudge() {

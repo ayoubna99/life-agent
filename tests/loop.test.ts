@@ -48,7 +48,7 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(sys.content!, /today: 2026-10-26/);
   assert.match(sys.content!, /plan_date: 2026-10-27/);
   assert.match(sys.content!, /user_language: fr/);
-  assert.deepEqual(names(planning.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document', 'save_settings', 'get_strategy', 'get_experiment_results', 'get_calendar', 'set_session_rule', 'remove_session_rule']);
+  assert.deepEqual(names(planning.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document', 'save_settings', 'get_strategy', 'get_experiment_results', 'get_calendar', 'set_session_rule', 'remove_session_rule', 'schedule_alarm']);
 
   const execute = setup([textReply('ok')]);
   await execute.run(base({ mode: 'execute' }));
@@ -61,7 +61,7 @@ test('the system prompt carries the mode and the app context, and each mode gets
   assert.match(content, /Mode: review/);
   assert.match(content, /review_date: 2026-10-26/);
   assert.match(content, /tasks_missed: \["Gym"\]/);
-  assert.deepEqual(names(review.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document', 'save_settings', 'get_strategy', 'save_strategy', 'get_experiment_results', 'get_calendar', 'set_session_rule', 'remove_session_rule']);
+  assert.deepEqual(names(review.net), ['get_usage', 'get_plan', 'save_plan', 'create_material', 'create_image', 'fetch_url', 'web_search', 'read_document', 'save_settings', 'get_strategy', 'save_strategy', 'get_experiment_results', 'get_calendar', 'set_session_rule', 'remove_session_rule', 'schedule_alarm']);
   assert.match(content, /STRATEGY MEMORY/);
   assert.doesNotMatch(content, /Current strategy:/, 'review reads the strategy itself');
 });

@@ -62,6 +62,26 @@ Android app (Flutter + a little Kotlin) ──> Supabase Edge Function "agent" �
 - Links the model suggests are checked before they are saved; dead or unsafe ones are dropped.
 - See [docs/API.md](docs/API.md) for every request and answer.
 
+## The night shift: Lify as a scientist studying one person
+
+Every night **Muse Spark Open** reads the user's whole history in one request, using its 1M-token context instead of
+retrieval: every nudge it ever sent with what the user did next, their nights, plans and settings, and its own theories
+from the night before. It thinks harder than during the day (`reasoning_effort: "medium"`; nudges use `"low"`) and:
+
+1. **Theories:** keeps, revises or rejects each theory against the new results, with counts ("left 4 of 6 after 22:00"),
+   and proposes new ones.
+2. **Experiment design:** writes tomorrow's **nudge bank**: short lines grouped by **angle** (the idea behind them). It
+   writes more lines for the angles that work, adds one or two new angles to test, and drops the ones that failed.
+3. **Critic:** a second pass plays "the user's inner skeptic" (`reasoning_effort: "low"`) and cuts generic, preachy or
+   repeated lines.
+4. **Validation (code):** at most 12 words, no minute counts, no "you're at your limit", no health language, never a
+   line already sent.
+
+During the day the phone picks from the bank with **Thompson sampling over angles**, not sentences. A winning idea keeps
+coming back in new words, never the same line twice. The card shows at once, with no model call and no network. The open
+model's visible reasoning is kept as an excerpt ("how Lify thought about it") in the app. Code: `nightshift.ts`,
+`core/Bank.kt`.
+
 ## How Life measures itself (not just prompts)
 
 The model writes; code decides and measures. Nothing below can be changed by prompting the model.
@@ -127,10 +147,10 @@ npm test
 
 ## Status
 
-- **Backend, unit tested (178 tests):** the agent loop, the three modes, server and device tools, plan validation, link checks,
-  storage, token handling, per-user and global caps, PDF in and out, photos in and out, voice, cleanup, strategy memory, experiments. The migrations were applied
+- **Backend, unit tested (184 tests):** the agent loop, the three modes, server and device tools, plan validation, link checks,
+  storage, token handling, per-user and global caps, PDF in and out, photos in and out, voice, cleanup, strategy memory, experiments, the night shift. The migrations were applied
   to a local Postgres 16 and their security rules checked. Functions ran in the real Deno runtime for the PDF writer and reader.
-- **App, unit and widget tested (143 Dart tests, 59 Kotlin tests):** sign-in, the API client, the chat loop with device tools, chat, voice,
+- **App, unit and widget tested (148 Dart tests, 63 Kotlin tests):** sign-in, the API client, the chat loop with device tools, chat, voice,
   files and photos, home, settings, the usage maths, nudge rules and app-name matching.
 - **Not yet run on a phone or against Meta's live API:** real Muse Spark tool calls, `/responses` (web search, photos, scanned PDFs),
   `/images/generations`, Voice Transcribe, and everything Android-specific (usage stats, alarms, the watcher service and the overlay).

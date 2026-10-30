@@ -318,13 +318,13 @@ void main() {
       expect(find.text('Testing: picked with a 12% chance'), findsOneWidget);
       expect(
         find.text(
-          'You stayed 9 more min. This style gets picked less here; trying others.',
+          'You stayed 9 more min. This idea gets picked less here; trying others.',
         ),
         findsOneWidget,
       );
       expect(find.text('Current best here (81% chance)'), findsOneWidget);
       expect(
-        find.text('You left the app. This style gets picked more here.'),
+        find.text('You left the app. This idea gets picked more here.'),
         findsOneWidget,
       );
     },

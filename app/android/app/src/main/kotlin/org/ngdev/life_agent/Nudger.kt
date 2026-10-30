@@ -52,7 +52,7 @@ class Nudger(context: Context) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.createNotificationChannel(NotificationChannel(CHANNEL_NUDGE, "Nudges", NotificationManager.IMPORTANCE_HIGH).apply { description = "The agent speaks up when a limit is near" })
             nm.createNotificationChannel(NotificationChannel(CHANNEL_REMINDER, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply { description = "Reminders before your tasks" })
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_WATCHER, "Watching your limits", NotificationManager.IMPORTANCE_MIN).apply { description = "Shown while Life watches your app limits" })
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_WATCHER, "Life running", NotificationManager.IMPORTANCE_MIN).apply { description = "Android needs this while Life is on. You can turn this category off."; setShowBadge(false) })
         }
 
         fun builder(context: Context, channel: String): Notification.Builder =
@@ -105,9 +105,9 @@ class Nudger(context: Context) {
      * phone does not draw it within [DRAW_WAIT_MS] (some phones hold back windows from apps in the background), it
      * becomes a heads-up notification instead, so the words always arrive. [done] hears "card" or "notification".
      */
-    fun card(title: String, text: String, appPkg: String?, id: Int, open: String? = null, done: ((String) -> Unit)? = null) {
+    fun card(title: String, text: String, appPkg: String?, id: Int, open: String? = null, pull: String? = null, done: ((String) -> Unit)? = null) {
         val fallback = {
-            notify(text, id, CHANNEL_NUDGE, title, openPending(ctx, open))
+            notify(text, id, CHANNEL_NUDGE, title, openPending(ctx, open), pull)
             done?.invoke("notification")
         }
         if (!cardsWork()) {
@@ -115,7 +115,7 @@ class Nudger(context: Context) {
             return
         }
         main.post {
-            val view = runCatching { showCard(title, text, appPkg, open) }.getOrNull()
+            val view = runCatching { showCard(title, text, appPkg, open, pull) }.getOrNull()
             if (view == null) {
                 fallback()
                 return@post
@@ -150,7 +150,8 @@ class Nudger(context: Context) {
         notify("It's time: $title", id, CHANNEL_REMINDER, "Lify", openPending(ctx, open))
     }
 
-    fun notify(text: String, id: Int, channel: String, title: String = "Life", open: PendingIntent? = null) {
+    /** [pull]: adds the "Pull me out" button (it opens Life, which counts as leaving the app, and records the tap). */
+    fun notify(text: String, id: Int, channel: String, title: String = "Life", open: PendingIntent? = null, pull: String? = null) {
         ensureChannels(ctx)
         val n = builder(ctx, channel)
             .setSmallIcon(smallIcon(ctx))
@@ -160,13 +161,19 @@ class Nudger(context: Context) {
             .setContentIntent(open ?: openAppIntent(ctx))
             .setAutoCancel(true)
             .apply { if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) @Suppress("DEPRECATION") setPriority(Notification.PRIORITY_HIGH) }
+            .apply {
+                if (pull != null) {
+                    @Suppress("DEPRECATION")
+                    addAction(Notification.Action.Builder(0, "Pull me out", openPending(ctx, "pull:$pull")).build())
+                }
+            }
             .build()
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(id, n)
     }
 
     private fun dp(v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
 
-    private fun showCard(title: String, text: String, appPkg: String?, open: String?): View {
+    private fun showCard(title: String, text: String, appPkg: String?, open: String?, pull: String?): View {
         val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         overlay?.let { runCatching { wm.removeView(it) } }
 
@@ -219,6 +226,19 @@ class Nudger(context: Context) {
             }
         }
         words.addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(5)))
+        // "Pull me out": one tap leaves the app (Life opens on what matters next); the tap is part of the measurement
+        var pullButton: TextView? = null
+        if (pull != null) {
+            pullButton = TextView(ctx).apply {
+                this.text = "Pull me out"
+                setTextColor(0xFF1B1530.toInt())
+                textSize = 14f
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+                background = GradientDrawable().apply { setColor(0xFFFF8A65.toInt()); cornerRadius = dp(18).toFloat() }
+            }
+            words.addView(pullButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
+        }
         card.addView(words, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
@@ -237,7 +257,7 @@ class Nudger(context: Context) {
 
         var closed = false
         val countdown = ValueAnimator.ofInt(1000, 0).apply {
-            duration = 12_000
+            duration = if (pull != null) 15_000 else 12_000
             interpolator = LinearInterpolator()
             addUpdateListener { bar.progress = it.animatedValue as Int }
         }
@@ -247,6 +267,10 @@ class Nudger(context: Context) {
             countdown.cancel()
             card.animate().translationY(if (up) -card.height.toFloat() - dp(60) else 0f).alpha(0f).setDuration(220)
                 .withEndAction { runCatching { wm.removeView(card) }; if (overlay === card) overlay = null }.start()
+        }
+        pullButton?.setOnClickListener {
+            close()
+            runCatching { openPending(ctx, "pull:$pull").send() }
         }
         countdown.addListener(object : android.animation.AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: android.animation.Animator) = close()

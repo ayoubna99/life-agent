@@ -48,7 +48,7 @@ export interface ParsedCall {
 }
 
 export type AgentStep =
-  | { kind: 'text'; text: string }
+  | { kind: 'text'; text: string; reasoning?: string }
   | { kind: 'tool_calls'; calls: ParsedCall[]; assistant: ChatMessage };
 
 /** What went wrong, without ever carrying the key, the prompt or the user's words. */
@@ -104,7 +104,7 @@ export function openConfigFromEnv(get: (name: string) => string | undefined): Mu
 }
 
 /** The jobs that can run on either model. */
-export type Job = 'chat' | 'nudge' | 'evening';
+export type Job = 'chat' | 'nudge' | 'evening' | 'nightshift';
 
 /**
  * Which model does a job, first choice then the other one as a fallback. MODEL_ROUTE lists the jobs for the open model
@@ -123,9 +123,16 @@ export function modelsFor(job: Job, get: (name: string) => string | undefined): 
     return [spark];
   }
   const route = (get('MODEL_ROUTE') ?? 'nudge,evening').split(',').map((s) => s.trim().toLowerCase());
-  const first = route.includes(job) ? open : spark ?? open;
+  // the night shift is the open model's own job (1M-token context, visible reasoning): always first
+  const first = job === 'nightshift' || route.includes(job) ? open : spark ?? open;
   const second = first === open ? spark : open;
   return second ? [first, second] : [first];
+}
+
+/** The same model asked to think harder or less (the open model only; the other one ignores it). */
+export function withEffort(cfg: MuseConfig, effort: 'low' | 'medium' | 'high'): MuseConfig {
+  if (cfg.label !== 'open' || !cfg.extra || !('reasoning_effort' in cfg.extra)) return cfg;
+  return { ...cfg, extra: { ...cfg.extra, reasoning_effort: effort } };
 }
 
 /** Sizes a request for the model it goes to: the open model gets room to reason and more time. */
@@ -232,7 +239,11 @@ export function parseStep(body: unknown): AgentStep {
 
   if (typeof message.content === 'string' && message.content.trim() !== '') {
     const text = cleanReply(message.content);
-    if (text !== '') return { kind: 'text', text };
+    // The open model shows its reasoning (a separate field, or <think> tags): kept apart, never shown as the answer.
+    const field = typeof message.reasoning_content === 'string' ? message.reasoning_content : typeof message.reasoning === 'string' ? message.reasoning : '';
+    const tagged = /<think>([\s\S]*?)<\/think>/i.exec(message.content)?.[1] ?? '';
+    const reasoning = (field || tagged).trim();
+    if (text !== '') return reasoning ? { kind: 'text', text, reasoning } : { kind: 'text', text };
   }
   throw new MuseError('bad_output');
 }

@@ -80,7 +80,7 @@ test('the lab notebook lists the newest nudges first with their words, why they 
   ]);
   assert.deepEqual(s.log[0], {
     day: '2026-10-29', time: '21:30', app: 'TikTok', band: 'night', arm: 'cost', label: 'nudges with what the time costs',
-    explore: true, propensity: 0.21, message: 'That is 2 hours of TikTok.', left: true, minutes_after: 0.3, demo: false,
+    explore: true, propensity: 0.21, message: 'That is 2 hours of TikTok.', angle: null, pulled: false, left: true, minutes_after: 0.3, demo: false,
   });
   assert.equal(s.log[1].minutes_after, 9);
 });

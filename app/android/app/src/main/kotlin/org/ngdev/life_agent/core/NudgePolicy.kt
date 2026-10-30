@@ -13,13 +13,15 @@ enum class NudgeReason(val wire: String) {
 data class NudgeDecision(val reason: NudgeReason, val key: String, val value: Long)
 
 /**
- * When the agent speaks up in the middle of a session. Quiet by design: one nudge when a limit is near (80%),
- * one when it is reached, then one every 10 more minutes, and never two within a few minutes of each other.
+ * When the agent speaks up in the middle of a session. Quiet by design (ten nudges in an evening is spam, and spam is
+ * ignored): one nudge when a limit is near (80%), one when it is reached, then only at 15, 45 and 105 minutes over it,
+ * at most [MAX_PER_APP] a day per app, and never two within [COOLDOWN_MS] of each other (any app, any reason).
  * [sent] remembers what was already said today (the caller saves it).
  */
 object NudgePolicy {
-    const val COOLDOWN_MS = 3L * 60 * 1000
-    const val OVER_STEP_MINUTES = 10L
+    const val COOLDOWN_MS = 20L * 60 * 1000
+    val OVER_STEPS = listOf(15, 45, 105)
+    const val MAX_PER_APP = 4
     private const val APPROACH_PERCENT = 80
 
     fun decide(day: String, pkg: String, usedMinutes: Int, limitMinutes: Int, nowMs: Long, lastNudgeAtMs: Long, sent: Map<String, Long>): NudgeDecision? {
@@ -30,10 +32,14 @@ object NudgePolicy {
         val limitKey = "$day|$pkg|limit"
         val overKey = "$day|$pkg|over"
 
+        val overs = (sent[overKey] ?: 0L).toInt()
+        val today = (if (sent.containsKey(approachingKey)) 1 else 0) + (if (sent.containsKey(limitKey)) 1 else 0) + overs
+        if (today >= MAX_PER_APP) return null
         if (usedMinutes >= limitMinutes) {
             if (!sent.containsKey(limitKey)) return NudgeDecision(NudgeReason.LIMIT, limitKey, nowMs)
-            val lastOver = sent[overKey] ?: limitMinutes.toLong()
-            if (usedMinutes >= lastOver + OVER_STEP_MINUTES) return NudgeDecision(NudgeReason.OVER, overKey, usedMinutes.toLong())
+            val step = OVER_STEPS.getOrNull(overs) ?: return null
+            // the value is how many "over" nudges were sent today
+            if (usedMinutes >= limitMinutes + step) return NudgeDecision(NudgeReason.OVER, overKey, overs + 1L)
             return null
         }
         val threshold = (limitMinutes * APPROACH_PERCENT + 99) / 100 // rounded up

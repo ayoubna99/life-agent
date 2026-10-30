@@ -21,6 +21,8 @@ import org.ngdev.life_agent.core.NudgeDecision
 import org.ngdev.life_agent.core.NudgePolicy
 import org.ngdev.life_agent.core.NudgeReason
 import org.ngdev.life_agent.core.NudgeTitle
+import org.ngdev.life_agent.core.NudgeBank
+import org.ngdev.life_agent.core.LogicalDay
 import org.ngdev.life_agent.core.SessionRules
 import org.ngdev.life_agent.core.OutcomeMeter
 import org.ngdev.life_agent.core.UsageAggregator
@@ -62,9 +64,11 @@ class LimitWatcherService : Service() {
         // Foreground first, always: Android stops an app that was asked to start a foreground service and did not. While
         // in the foreground the phone keeps Life running when you leave it; without it Life is paused in the background
         // and the nudges waited until you came back.
+        // Android requires a notification while the watcher runs: as quiet as allowed (no sound, lowest importance, no text)
         val note = Nudger.builder(this, Nudger.CHANNEL_WATCHER)
             .setSmallIcon(Nudger.smallIcon(this))
-            .setContentTitle("Life is watching your limits")
+            .setContentTitle("Life")
+            .setShowWhen(false)
             .setContentIntent(Nudger.openAppIntent(this))
             .setOngoing(true)
             .build()
@@ -127,6 +131,7 @@ class LimitWatcherService : Service() {
         val now = System.currentTimeMillis()
         val tz = TimeZone.getDefault()
         finishExperiments(now)
+        maybeNightShift(now, tz)
 
         val start = UsageAggregator.startOfDay(now, tz)
         val events = reader.events(start, now)
@@ -154,14 +159,15 @@ class LimitWatcherService : Service() {
                 store.log("$label: Lify did not answer (${store.lastProblem ?: "?"}), skipped")
             } else if (stillInFront(front)) {
                 store.lastNudgeAt = now
-                nudger.card(NudgeTitle.onApp(minutes, label), answer.text, front, 2500 + (front.hashCode() and 0xFFF)) { how -> store.log("$label: reminder shown as $how") }
+                nudger.card(NudgeTitle.onApp(minutes, label), answer.text, front, 2500 + (front.hashCode() and 0xFFF), pull = "rule") { how -> store.log("$label: reminder shown as $how") }
             } else {
                 store.log("$label: you left before it was ready, not shown")
             }
             return 20_000L
         }
 
-        // 2. Daily limits.
+        // 2. Daily limits. The user's own rule for this app (or for any app) replaces them: one voice, not two.
+        if (rules.any { it.pkg == front || it.pkg == SessionRules.ANY }) return idle
         val limit = limits.firstOrNull { it.pkg == front } ?: return idle
         val event = runCatching { DayRules.currentEvent(calendar.events(now - 12 * 3600_000L, now + 60_000L), now) }.getOrNull()
         val decision: NudgeDecision = when {
@@ -173,40 +179,89 @@ class LimitWatcherService : Service() {
         if (decision.reason != NudgeReason.DEMO) store.saveSent(sent + (decision.key to decision.value))
         store.lastNudgeAt = now
 
-        // Which nudge style: code decides by contextual Thompson sampling (this app, this time of day), then the agent
-        // writes it from the user's own data. The chance of the choice is kept for off-policy evaluation.
         val band = Band.of(cal.get(Calendar.HOUR_OF_DAY))
         val context = "$front|${band.wire}"
-        val pick = ContextualBandit.decide(Arm.values().toList(), store.armStats(), store.armStats(context), rnd, store.experimentsOn)
-        val wire = if (decision.reason == NudgeReason.DEMO) NudgeReason.LIMIT.wire else decision.reason.wire
-        store.log("${limit.label}: $used/${limit.minutes} min, ${decision.reason.wire}, asking Lify (${pick.arm.wire})")
-        val answer = NudgeClient(store).fetch(day, hhmm, limit.label, used, limit.minutes, wire, event?.title, pick.arm.wire)
-        // Never a fixed sentence: if the agent cannot be reached, this nudge is skipped and not measured.
-        if (answer == null) {
-            store.log("${limit.label}: Lify did not answer (${store.lastProblem ?: "?"}), skipped")
-            return if (demo) 5_000L else 20_000L
-        }
-        // The person may have left while the words were written: a card on another app would make no sense, and
-        // measuring "left after the nudge" would be wrong.
-        if (!stillInFront(front)) {
-            store.log("${limit.label}: you left before it was ready, not shown")
-            return if (demo) 5_000L else 20_000L
+        // First choice: tonight's nudge bank from the night shift. Code picks the ANGLE by contextual Thompson sampling
+        // and shows its next unseen line at once (no waiting, no network). Without a bank (first day, or every line
+        // used): the style bandit, and the agent writes the line live.
+        val fromBank = NudgeBank.pick(store.bank(), band, limit.label, store.seenLines(), store.angleStats(), store.angleStats(context), rnd)
+        val arm: Arm
+        val explore: Boolean
+        val propensity: Double
+        val text: String
+        if (fromBank != null) {
+            arm = fromBank.angle.style
+            explore = fromBank.explore
+            propensity = fromBank.propensity
+            text = fromBank.text
+            store.addSeen(fromBank.line.id)
+            store.log("${limit.label}: $used/${limit.minutes} min, ${decision.reason.wire}, bank angle ${fromBank.angle.id}")
+        } else {
+            val pick = ContextualBandit.decide(Arm.values().toList(), store.armStats(), store.armStats(context), rnd, true)
+            val wire = if (decision.reason == NudgeReason.DEMO) NudgeReason.LIMIT.wire else decision.reason.wire
+            store.log("${limit.label}: $used/${limit.minutes} min, ${decision.reason.wire}, no bank line left, asking Lify (${pick.arm.wire})")
+            val answer = NudgeClient(store).fetch(day, hhmm, limit.label, used, limit.minutes, wire, event?.title, pick.arm.wire)
+            // Never a fixed sentence: if the agent cannot be reached, this nudge is skipped and not measured.
+            if (answer == null) {
+                store.log("${limit.label}: Lify did not answer (${store.lastProblem ?: "?"}), skipped")
+                return if (demo) 5_000L else 20_000L
+            }
+            // The person may have left while the words were written: a card on another app would make no sense.
+            if (!stillInFront(front)) {
+                store.log("${limit.label}: you left before it was ready, not shown")
+                return if (demo) 5_000L else 20_000L
+            }
+            arm = pick.arm
+            explore = pick.explore
+            propensity = pick.propensity
+            text = answer.text
         }
         val title = if (event != null) "During ${event.title}" else NudgeTitle.onApp(used, limit.label)
         val shownAt = System.currentTimeMillis()
-        nudger.card(title, answer.text, front, 2000 + (front.hashCode() and 0xFFF)) { how -> store.log("${limit.label}: nudge shown as $how") }
-        if (store.experimentsOn) {
-            store.savePending(
-                store.pending() + NativeStore.Pending(
-                    id = UUID.randomUUID().toString(), pkg = front, app = limit.label, arm = pick.arm, explore = pick.explore,
-                    reason = decision.reason, atMs = shownAt, day = day, time = hhmm,
-                    windowMs = if (demo) DemoPolicy.WINDOW_MS else OutcomeMeter.WINDOW_MS,
-                    leftWithinMs = if (demo) DemoPolicy.LEFT_WITHIN_MS else OutcomeMeter.LEFT_WITHIN_MS,
-                    demo = demo, propensity = pick.propensity, band = band, message = answer.text,
-                ),
-            )
-        }
+        val pendingId = UUID.randomUUID().toString()
+        nudger.card(title, text, front, 2000 + (front.hashCode() and 0xFFF), pull = pendingId) { how -> store.log("${limit.label}: nudge shown as $how") }
+        // Always measured on the phone (that is how Lify learns what works); sent to the server only with experiments on.
+        store.savePending(
+            store.pending() + NativeStore.Pending(
+                id = pendingId, pkg = front, app = limit.label, arm = arm, explore = explore,
+                reason = decision.reason, atMs = shownAt, day = day, time = hhmm,
+                windowMs = if (demo) DemoPolicy.WINDOW_MS else OutcomeMeter.WINDOW_MS,
+                leftWithinMs = if (demo) DemoPolicy.LEFT_WITHIN_MS else OutcomeMeter.LEFT_WITHIN_MS,
+                demo = demo, propensity = propensity, band = band, message = text,
+                angle = fromBank?.angle?.id, lineId = fromBank?.line?.id,
+            ),
+        )
         return if (demo) 5_000L else 20_000L
+    }
+
+    /**
+     * The night shift runs on the server; the watcher only asks for it. In the evening (from 20:00 to 04:00) when there
+     * is no bank for tomorrow yet: "study" then "critic" (the study may think for two minutes, so on its own thread).
+     * During the day when the bank is older than today: fetch the newest one. At most one try per hour.
+     */
+    private fun maybeNightShift(now: Long, tz: TimeZone) {
+        if (now - store.lastShiftTryAt < 60 * 60_000L) return
+        val hour = Calendar.getInstance(tz).apply { timeInMillis = now }.get(Calendar.HOUR_OF_DAY)
+        val today = LogicalDay.today(now, tz)
+        val tomorrow = LogicalDay.tomorrow(now, tz)
+        val have = store.bankDay
+        val evening = hour >= 20 || hour < 4
+        val step = when {
+            evening && have != tomorrow -> "study"
+            have == null || have < today -> "get"
+            else -> return
+        }
+        store.lastShiftTryAt = now
+        Thread {
+            val client = NudgeClient(store)
+            val shift = if (step == "study") client.nightShift("study", tomorrow)?.let { client.nightShift("critic", tomorrow) ?: it } else client.nightShift("get", null)
+            if (shift != null && shift.optJSONObject("shift") != null) {
+                store.saveBank(shift)
+                store.log("night shift: bank for ${shift.optString("day")} ready (${shift.optString("status")})")
+            } else if (step == "study") {
+                store.log("night shift: could not run (${store.lastProblem ?: "no answer"}), next try in an hour")
+            }
+        }.start()
     }
 
     /** Measures the interventions whose window is over, updates the scores and sends the results (best effort). */
@@ -221,13 +276,14 @@ class LimitWatcherService : Service() {
                     stats = Bandit.record(stats, p.arm, o.left)
                     val context = "${p.pkg}|${p.band.wire}"
                     store.saveArmStats(Bandit.record(store.armStats(context), p.arm, o.left), context)
+                    if (p.angle != null) store.recordAngle(p.angle, o.left || p.pulled, context)
                     ExperimentResult(
-                        p.id, p.day, p.time, p.app, p.arm, p.explore, p.reason, o.left, o.secondsAfter, (p.windowMs / 1000).toInt(), p.demo,
-                        p.propensity, p.band, p.message,
+                        p.id, p.day, p.time, p.app, p.arm, p.explore, p.reason, o.left || p.pulled, o.secondsAfter, (p.windowMs / 1000).toInt(), p.demo,
+                        p.propensity, p.band, p.message, p.angle, p.lineId, p.pulled,
                     )
                 }
                 store.saveArmStats(stats)
-                store.queue(results)
+                if (store.experimentsOn) store.queue(results)
                 store.savePending(waiting)
             }
         }

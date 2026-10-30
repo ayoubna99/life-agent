@@ -178,6 +178,11 @@ class FakeNative implements Native {
   Future<void> setNudgesAsNotifications({required bool on}) async =>
       nudgesAsNotifications = on;
 
+  Map<String, Object?>? bank;
+
+  @override
+  Future<void> setNudgeBank(Map<String, Object?> shift) async => bank = shift;
+
   final played = <Uint8List>[];
 
   @override

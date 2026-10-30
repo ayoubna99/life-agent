@@ -44,9 +44,9 @@ test('the open model always reasons: it gets room to think, and its reasoning ne
   assert.equal('openTimeoutMs' in s2, false);
   // reasoning in its own field, or in think tags: only the answer is kept
   const a = parseStep({ choices: [{ message: { role: 'assistant', reasoning_content: 'Let me think about Jake...', content: 'Jake, German is waiting.' } }] });
-  assert.deepEqual(a, { kind: 'text', text: 'Jake, German is waiting.' });
+  assert.deepEqual(a, { kind: 'text', text: 'Jake, German is waiting.', reasoning: 'Let me think about Jake...' });
   const b = parseStep({ choices: [{ message: { role: 'assistant', content: '<think>He has 2 hours on TikTok.</think>Jake, two hours. Your thesis?' } }] });
-  assert.deepEqual(b, { kind: 'text', text: 'Jake, two hours. Your thesis?' });
+  assert.deepEqual(b, { kind: 'text', text: 'Jake, two hours. Your thesis?', reasoning: 'He has 2 hours on TikTok.' });
 });
 
 test('failover: when the first model is down or answers only with reasoning, the other Meta model answers', async () => {
@@ -96,5 +96,5 @@ test('the real Baseten answer format: reasoning in reasoning_content, the answer
     model: 'meta-models/muse-spark-open-1026',
     usage: { prompt_tokens: 153, completion_tokens: 913, completion_tokens_details: { reasoning_tokens: 893 } },
   };
-  assert.deepEqual(parseStep(real), { kind: 'text', text: "Hi Jake, hope you're having a great day!" });
+  assert.deepEqual(parseStep(real), { kind: 'text', text: "Hi Jake, hope you're having a great day!", reasoning: 'We need to respond with hi to Jake in one sentence...' });
 });

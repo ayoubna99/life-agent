@@ -382,7 +382,7 @@ test('nudge over HTTP returns the message and which task it is about', async () 
 });
 
 test('each nudge style tells the model what to lean on, always with the same personal facts', async () => {
-  for (const [style, rule] of [['task', /NEXT TASK/], ['cost', /COSTS/], ['goal', /OWN GOAL/]] as const) {
+  for (const [style, rule] of [['task', /next important task/], ['cost', /costs them/], ['goal', /own goal/]] as const) {
     const store = new MemoryStore();
     store.profile = { apps: [], focus: 'pass German B1', sleep: '23:30' };
     const net = fakeNet([textReply('ok')]);
@@ -434,4 +434,18 @@ test('a session reminder: the nudge reminds them of exactly what they asked, per
   bad({ session_minutes: 30 });
   bad({ ask: 'x'.repeat(121), session_minutes: 30 });
   bad({ ask: 'do 10 push-ups' });
+});
+
+test('a live nudge is one short line that never repeats the last ones and skips small chores', async () => {
+  const store = new MemoryStore();
+  store.profile = { apps: [], focus: 'thesis' };
+  store.plans.set(nudgeBody.today, { date: nudgeBody.today, status: 'planned', data: { tasks: [{ title: 'Drink water', minutes: 5 }, { title: 'Thesis chapter 2', minutes: 60 }], limits: [] } });
+  const net = fakeNet([textReply('ok')]);
+  await runNudge(parseNudgeRequest({ ...nudgeBody, recent: ['Gym at 6.', 'One page. I dare you.'] }), { cfg, store, dailyLimit: 80, globalLimit: 1000, fetchImpl: net.fetchImpl });
+  const sys = net.museRequests[0].messages[0].content!;
+  assert.match(sys, /At most 12 words/);
+  assert.match(sys, /recent_nudges: \["Gym at 6\.","One page\. I dare you\."\]/);
+  assert.match(sys, /Thesis chapter 2/);
+  assert.doesNotMatch(sys, /next_task: .*Drink water/);
+  assert.throws(() => parseNudgeRequest({ ...nudgeBody, recent: 'x' }));
 });
