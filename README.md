@@ -56,7 +56,7 @@ off the phone and onto what you said matters.
 ## 📝 Hackathon disclosure
 
 Before the hackathon I built an early prototype of this idea: an Android app with Google login, a screen-time
-display and app limits with generic notifications. Its backend only handled the Google sign-in(this app dont have Google sign-in): no other APIs, no
+display and app limits with generic notifications. Its backend only handled the Google sign-in: no other APIs, no
 data processing. It had **no AI agent and no AI features of any kind**.
 
 **Everything in this repository is brand new and was built during the hackathon:**
@@ -309,21 +309,41 @@ Life steps in after you've been in it for a while.*
 
 ## 🏗 Architecture
 
+Meta's Muse models are the brain of Life at every moment of the day: they listen, read, plan, act on your phone, study
+you overnight and write every line you see. The phone and the server give them senses, hands and a memory.
+
 ```
- Android phone                                              Supabase                         Meta
-┌──────────────────────────────────────────┐   HTTPS   ┌─────────────────────────┐      ┌───────────────────┐
-│ Flutter UI: home, chat, task screens,    │ ───────►  │ Edge Function "agent"   │ ───► │ Muse Spark        │
-│ lab notebook, theories, Check Lify       │           │  agent loop + 3 modes   │      │  (chat, tools)    │
-│                                          │           │  server tools           │      ├───────────────────┤
-│ Device tools: create_task, set_app_limit,│ ◄──────── │  nudge · evening        │ ───► │ Muse Spark Open   │
-│ schedule_alarm, get_calendar, rules      │  tool     │  NIGHT SHIFT            │      │  (Baseten)        │
-│                                          │  calls    │  experiments + OPE      │      ├───────────────────┤
-│ Kotlin: usage watcher (foreground),      │           ├─────────────────────────┤      │ Voice Transcribe  │
-│ Thompson sampling, nudge bank, overlay   │           │ Postgres + RLS: plans,  │      └───────────────────┘
-│ card, alarms, phone-down nights          │           │ messages, strategies,   │
-└──────────────────────────────────────────┘           │ experiments, nights,    │
-                                                       │ night_shifts · Storage  │
-                                                       └─────────────────────────┘
+┌─ EVENING · you talk to Lify (voice, text, a PDF, a photo) ─────────────────────────────────────┐
+│ MUSE VOICE TRANSCRIBE   your voice → text                                                      │
+│ MUSE SPARK (agent)      reads your CV, notes and photos (vision), searches the web (sources),  │
+│                         plans tomorrow with you, writes study sheets as PDFs, and ACTS on your │
+│                         phone with 18 tool calls: tasks, alarms, app limits, calendar, rules   │
+│ MUSE IMAGE              pictures for your day and your tasks                                   │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │
+                                                ▼  tomorrow is on your phone the moment the plan is saved
+┌─ NIGHT SHIFT · Muse Spark Open studies you (1M-token context, reasoning "medium") ─────────────┐
+│ reads ALL of it in one request: every nudge + what you did next, nights, plans, your path      │
+│ → THEORIES about what gets you off your phone, and when   → verified against your results      │
+│ → tomorrow's NUDGE BANK: fresh lines grouped by idea     → a critic pass cuts weak lines       │
+│ → the minutes you won back on Your path become a plan ("25 min back: 2 pages at 22:15")        │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │
+                                                ▼  the bank and today's targets go to the phone
+┌─ DAY · on your phone (Kotlin), instant, works offline ─────────────────────────────────────────┐
+│ usage watcher sees TikTok at 1 AM, 40 min over today's target                                  │
+│ → Thompson sampling picks the idea most likely to work on you HERE → a line you've never seen  │
+│ → the card slides over TikTok: "Gym at 6. TikTok will still be here."  [Pull me out]           │
+│ → no line fits? MUSE SPARK OPEN writes one live (reasoning "low", lands in seconds)            │
+│ → did you leave? measured from Android's usage events                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │
+                                                ▼  every result goes back up: tonight's night shift learns from it
+┌─ SUPABASE · the memory ────────────────────────────────────────────────────────────────────────┐
+│ Edge Function "agent" (agent loop, 3 modes, night shift, theory checks, off-policy evaluation) │
+│ Postgres + row-level security: plans, chats, strategies, nudges + outcomes, nights, shifts,    │
+│ step-down paths · Storage: PDFs and pictures (deleted after 3 days)                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Three agent modes, one agent:**
