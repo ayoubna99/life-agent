@@ -14,7 +14,7 @@
   <img alt="Muse Spark Open" src="https://img.shields.io/badge/Meta-Muse%20Spark%20Open%20(open%20weights)-0866FF" />
   <img alt="Android" src="https://img.shields.io/badge/Android-Flutter%20%2B%20Kotlin-3DDC84" />
   <img alt="Supabase" src="https://img.shields.io/badge/Backend-Supabase%20Edge%20%2B%20Postgres-3ECF8E" />
-  <a href="https://github.com/OWNER/REPO/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/OWNER/REPO/actions/workflows/tests.yml/badge.svg" /></a>
+  <a href="https://github.com/ayoubna99/life-agent/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/ayoubna99/life-agent/actions/workflows/tests.yml/badge.svg" /></a>
 </p>
 
 <p align="center">
@@ -24,6 +24,7 @@
   <a href="#-how-life-meets-the-judging-criteria">Judging criteria</a> ·
   <a href="#-architecture">Architecture</a> ·
   <a href="#-how-judges-can-verify">Verify it</a> ·
+  <a href="#-validate-with-your-own-meta-key">Your own key</a> ·
   <a href="#-privacy">Privacy</a>
 </p>
 
@@ -42,8 +43,8 @@
 |---|---|
 | 👀 **It watches** | Real screen time from Android's usage events: which app, for how long, and when your phone went quiet last night. |
 | ✋ **It steps in** | A personal card on top of the app you're stuck in, at the right moment, with one tap to get out. |
-| 📏 **It measures** | Did you leave within 20 seconds? Did you tap "Pull me out"? Code on the phone records it, not the model. |
-| 🧪 **It learns** | Every night Muse Spark Open reads your whole history, keeps or rejects its **theories about you**, and writes tomorrow's experiment. |
+| 📏 **It measures** | Did you leave the app right after (within 2 minutes; 20 seconds in demo mode)? Did you tap "Pull me out"? Code on the phone records it, not the model. |
+| 🧪 **It learns** | Every night Muse Spark Open reads your whole history, proposes **theories about you**, code checks them on your results, and Lify writes tomorrow's experiment. |
 
 Planning your day, alarms and study material are there too, but they serve this loop. The agent's job is to get you
 off the phone and onto what you said matters.
@@ -52,7 +53,7 @@ off the phone and onto what you said matters.
 
 ## 🎬 Demo
 
-> **[▶ Watch the 3-minute demo](DEMO_URL)** · **[⬇ Download the APK](https://github.com/OWNER/REPO/releases/latest)**
+> **[▶ Watch the 3-minute demo](DEMO_URL)** · **[⬇ Download the APK](https://github.com/ayoubna99/life-agent/releases/latest)**
 
 <p align="center">
   <img src="docs/media/card.png" width="230" alt="A nudge card over TikTok with the Pull me out button" />
@@ -69,22 +70,17 @@ off the phone and onto what you said matters.
 
 ## 📈 Measured on a real phone
 
-One person, one Samsung phone, from FROM_DATE to TO_DATE. An early signal, not proof: every number comes with its
-sample size.
+A working-system check on one Samsung phone, during development (late October 2026). It shows that the loop runs end
+to end on a real device; it is not a study of whether Life changes anyone's habits.
 
 | What | Result |
 |---|---|
-| Nudges shown | TBD (TBD from the night-shift bank, TBD written live) |
-| Left the app within 20 s / 2 min | TBD of TBD (TBD%) |
-| Tapped "Pull me out" | TBD |
-| Best idea so far | "TBD": left TBD of TBD |
-| Theories checked by code | TBD kept · TBD rejected · TBD still testing |
-| Model overruled by the data | TBD theories ("Lify guessed kept, your results say rejected") |
-| Life vs the best single nudge style (off-policy estimate) | lift TBD, 90% interval [TBD, TBD] |
-| Night shift | TBD s for the study, TBD s for the critic, about $TBD per night on Baseten |
-| Screen time on the limited apps | TBD min/day in the week before → TBD min/day with Life |
+| Nudges shown and measured by the phone (outside demo mode) | **39**: each one logged with its moment, its words and what happened next |
+| Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events, not by the model |
+| Night shift, end to end | Muse Spark Open read the history, wrote theories and the nudge bank, and the critic finished **41 s** after the draft was saved |
+| The bank in use | Ideas from the night shift were shown and scored (in demo mode): the "night TikTok wind-down" idea got the user to leave **2 of 3** times |
 
-How each number is computed: [docs/MEASURED.md](docs/MEASURED.md).
+Every number above comes from the app's own logs; the queries are in [docs/MEASURED.md](docs/MEASURED.md).
 
 ---
 
@@ -149,7 +145,7 @@ Code: [`nightshift.ts`](supabase/functions/_shared/nightshift.ts) · [`theories.
 - **Life doesn't block, it persuades, and it measures whether the persuasion worked.** You can always keep scrolling;
   Life makes it a choice.
 - **It works on what you care about:** every nudge points at your own goal, tomorrow's plan, or your real phone-down
-  time last night ("phone down at 03:30 last night. Tonight?"). Never a generic "take a break".
+  time last night ("Phone down at 03:30 last night. Tonight?"). Never a generic "take a break".
 - **It respects you:** at most 4 nudges per app per day, at least 20 minutes apart, spaced further out the longer you go
   over (+15, +45, +105 minutes). Your own rules ("every 30 minutes on any app, get me out") replace them.
 
@@ -182,17 +178,17 @@ The model writes; **code decides and measures**. Nothing below can be changed by
 5. **Strategy memory:** each evening review writes a new strategy version. The server refuses any change that doesn't
    cite a number, and every version is kept (day 1 vs. today).
 6. **Real Android engineering:**
-   - a foreground watcher reading `UsageStatsManager` events;
-   - a custom overlay card with a "Pull me out" button. On phones that hide overlays it falls back to a heads-up notification automatically;
-   - a watchdog alarm that restarts the watcher if the phone kills it;
-   - exact alarms and real Clock-app alarms;
-   - phone-down detection from unlock events, which ignores notification wake-ups, alarms and calls.
+    - a foreground watcher reading `UsageStatsManager` events;
+    - a custom overlay card with a "Pull me out" button. On phones that hide overlays it falls back to a heads-up notification automatically;
+    - a watchdog alarm that restarts the watcher if the phone kills it;
+    - exact alarms and real Clock-app alarms;
+    - phone-down detection from unlock events, which ignores notification wake-ups, alarms and calls.
 7. **Production basics:**
-   - anonymous auth with row-level security on every table;
-   - per-user and global daily caps;
-   - keys only in server secrets;
-   - every link checked before it is saved;
-   - 402 automated tests.
+    - anonymous auth with row-level security on every table;
+    - per-user and global daily caps;
+    - keys only in server secrets;
+    - every link checked before it is saved;
+    - 402 automated tests.
 
 Code: [`Experiment.kt`](app/android/app/src/main/kotlin/org/ngdev/life_agent/core/Experiment.kt) ·
 [`experiments.ts`](supabase/functions/_shared/experiments.ts) · [`strategy.ts`](supabase/functions/_shared/strategy.ts) ·
@@ -280,9 +276,9 @@ Life is built on findings from behaviour research, not on the idea that an AI me
 ```
 
 - **Three agent modes, one agent:**
-  - **planning** (evening): asks until it has everything, then saves the plan;
-  - **execute** (morning): sets up the day on the phone through device tool calls;
-  - **review** (evening): compares the plan with real usage and updates the strategy.
+    - **planning** (evening): asks until it has everything, then saves the plan;
+    - **execute** (morning): sets up the day on the phone through device tool calls;
+    - **review** (evening): compares the plan with real usage and updates the strategy.
 - **The server remembers the conversation;** the phone sends only new messages and tool results.
 - **API reference:** [docs/API.md](docs/API.md).
 
@@ -322,20 +318,60 @@ See [app/README.md](app/README.md) for permissions and first run.
 
 ## 🔍 How judges can verify
 
-1. **Install the [APK](https://github.com/OWNER/REPO/releases/latest)** on an Android phone (Android 10+).
+1. **Install the [APK](https://github.com/ayoubna99/life-agent/releases/latest)** on an Android phone (Android 10+).
 2. Finish the 5 onboarding slides. Allow **Usage access**, **Show over other apps** and **Notifications**. In Settings
    → Check Lify, set **Battery** to unrestricted.
 3. **Talk to Lify:** tap *Plan tomorrow* and plan by voice or text. Saving the plan puts tomorrow's tasks and alarms on
    the phone right away (check your Clock app).
-4. **See a nudge:** Settings → Experiments → turn on *Demo mode*, then open one of the apps you chose for about 20
-   seconds. A card slides in with **Pull me out**.
+4. **See a nudge:** Settings → Experiments → turn on *Experiments*, then *Demo mode*. Open one of the apps you chose
+   for about 20 seconds. A card slides in with **Pull me out**.
 5. **See the night shift:** Home → TEST → **Night shift (test)** (up to 2 minutes), then open *Lify's theories about
    you*: theories with the verdict code computed, tomorrow's lines, and "How Lify thought about it".
 6. **See everything that happened:** Settings → Check Lify → *What the watcher did*.
 7. **Run the tests:** `npm test` (backend), `cd app && flutter test` (app). They also run on every push:
-   [GitHub Actions](https://github.com/OWNER/REPO/actions/workflows/tests.yml).
+   [GitHub Actions](https://github.com/ayoubna99/life-agent/actions/workflows/tests.yml).
 
 The judging build uses a shared demo backend with a daily cap per user, so a judge's account works on its own.
+
+---
+
+## 🔑 Validate with your own Meta key
+
+The hackathon's Muse Spark credits end on 5 November 2026. After that, the shared demo backend runs on **Muse Spark
+Open** only (planning chats with tools, nudges, the night shift and theories keep working). To test everything with
+your own Meta key, run your own copy. No code changes: every key is a server secret.
+
+**1. Backend (about 10 minutes)**: a free Supabase project, Node 22.6+:
+```
+git clone https://github.com/ayoubna99/life-agent && cd life-agent
+npm install
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
+npx supabase db push
+npx supabase secrets set MUSE_BASE_URL=https://.../v1 MUSE_API_KEY=YOUR_META_KEY MUSE_MODEL=YOUR_MUSE_SPARK_MODEL
+npx supabase functions deploy agent
+```
+In Supabase → Authentication → Providers, turn on **Anonymous sign-ins**.
+Optional, for Muse Spark Open: `npx supabase secrets set OPEN_API_KEY=YOUR_BASETEN_KEY`.
+Without it, every job (including the night shift) runs on Muse Spark.
+
+**2a. Quick check from a terminal, no phone needed.** It talks to your backend exactly like the app does:
+```
+$env:SUPA_URL = "https://YOUR_PROJECT_REF.supabase.co"; $env:SUPA_KEY = "sb_publishable_..."
+node scripts/chat.mjs --fake-usage                             # planning chat with tool calls
+node scripts/chat.mjs --voice C:\path\recording.wav            # Muse Voice Transcribe
+node scripts/chat.mjs --attach C:\path\notes.pdf               # reading a PDF or a photo
+node scripts/chat.mjs nudge --app TikTok --used 52 --limit 30  # the line a nudge card would show
+.\scripts\smoke.ps1                                            # the whole flow in one go
+```
+
+**2b. The full app on your backend:**
+```
+cd app
+flutter build apk --release --dart-define=SUPA_URL=https://YOUR_PROJECT_REF.supabase.co --dart-define=SUPA_KEY=sb_publishable_...
+```
+Install `app/build/app/outputs/flutter-apk/app-release.apk` and follow the steps in
+[How judges can verify](#-how-judges-can-verify).
 
 ---
 
@@ -355,9 +391,9 @@ The judging build uses a shared demo backend with a daily cap per user, so a jud
 - **Never collected:** the content of other apps, what you watch, messages, location, contacts. The watcher only sees which
   app is in front and for how long, from Android's usage statistics.
 - **Accounts are anonymous:** no email, no phone number. The account lives on your phone.
-- **Delete your data:** send the first 8 characters of your account id (Settings → Check Lify → Account) to
-  CONTACT. Deleting the account removes every row about you (every table is linked to it and deleted with it) and
-  your files. A one-tap "Delete my data" button is next on the list.
+- **Delete your data:** email the first 8 characters of your account id (Settings → Check Lify → Account) to
+  ayoub.nadjem09@gmail.com. Deleting the account removes every row about you (every table is linked to it and deleted
+  with it) and your files. A one-tap "Delete my data" button is next on the list.
 - **"Totals from all users"** is a design option only. Nothing is pooled today. If it is ever built, it will be
   opt-in and share only counts per kind of nudge, nothing personal.
 - **Open weights:** because Muse Spark Open's weights are open, the night shift can run on servers you control, so your
@@ -368,15 +404,15 @@ The judging build uses a shared demo backend with a daily cap per user, so a jud
 ## 📊 Status
 
 - **Tested end to end on a real Android phone (Samsung):**
-  - planning chats with live Muse Spark tool calls;
-  - Muse Spark Open on Baseten;
-  - the night shift and the nudge bank;
-  - the nudge cards and "Pull me out";
-  - screen time and phone-down nights;
-  - the evening notification;
-  - alarms and calendar;
-  - voice;
-  - Check Lify.
+    - planning chats with live Muse Spark tool calls;
+    - Muse Spark Open on Baseten;
+    - the night shift and the nudge bank;
+    - the nudge cards and "Pull me out";
+    - screen time and phone-down nights;
+    - the evening notification;
+    - alarms and calendar;
+    - voice;
+    - Check Lify.
 - **Automated tests:** 402 in all: 189 backend, 148 Flutter, 65 Kotlin (JVM). The Android code compiles against the real Android 15 classes.
 - **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes. One person over a few
   days is not proof, and Life says so.
@@ -385,15 +421,15 @@ The judging build uses a shared demo backend with a daily cap per user, so a jud
 
 ## 📝 Hackathon disclosure
 
-Before the hackathon I built an early prototype of this idea: PROTOTYPE_DESCRIPTION. It had **no agentic or AI
-features**.
+Before the hackathon I built an early prototype of this idea: an Android app with Google login, a screen-time
+display and app limits with generic notifications. It had **no AI agent and no AI features of any kind**.
 
-This repository starts at the tag [`hackathon-start`](https://github.com/OWNER/REPO/releases/tag/hackathon-start), its
-first commit.
+**Everything in this repository is brand new and was built during the hackathon:**
+- a new codebase, written from scratch: no code from the prototype is reused;
+- a new stack (Flutter + Kotlin, Supabase Edge Functions and Postgres, Meta's Muse Spark and Muse Spark Open);
+- a new UI, new screens, a new logo and new branding;
+- everything that makes Life what it is: the agent Lify, the night shift, the theories checked by code, the
+  experiments with Thompson sampling, the off-policy evaluation, the personal nudge cards and the phone-down nights.
 
-**Everything in this repository was built during the hackathon.** It is a new codebase:
-- every screen, the UI and the logo are brand new;
-- the stack is different;
-- none of the prototype's code is reused.
-
-The agent, the night shift, the experiments, the watcher and the evaluation did not exist before.
+This repository starts at the tag [`hackathon-start`](https://github.com/ayoubna99/life-agent/releases/tag/hackathon-start),
+its first commit.
