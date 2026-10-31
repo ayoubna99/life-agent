@@ -22,14 +22,16 @@ final _shift = {
         'angle': 'gym_blunt',
         'confidence': 0.72,
         'status': 'kept',
-        'evidence': 'left 4 of 6',
+        'evidence': 'Left 4/6 with it vs 1/6 without (at night)',
+        'model_said': {'status': 'kept', 'confidence': 0.7},
       },
       {
         'id': 'q',
         'statement': 'Questions do not work',
         'confidence': 0.8,
         'status': 'rejected',
-        'evidence': 'stayed 5 of 5',
+        'evidence': 'Left 0/5 with it vs 4/6 without (all moments)',
+        'model_said': {'status': 'kept', 'confidence': 0.9},
       },
     ],
     'angles': [
@@ -59,7 +61,13 @@ void main() {
         stats: [
           {'angle': 'gym_blunt', 'tried': 6, 'left': 4},
         ],
+        beliefs: {
+          'why': ['A concrete next step tends to beat general advice.'],
+        },
       )!;
+      expect(s.assumptions.single, startsWith('A concrete next step'));
+      expect(s.theories[1].overruled, isTrue);
+      expect(s.theories[0].overruled, isFalse);
       expect(s.theories.first.status, 'kept');
       expect(s.angles.single.left, 4);
       expect(s.lineCount, 1);
@@ -82,13 +90,25 @@ void main() {
       expect(find.text('Questions do not work'), findsNothing);
       expect(find.textContaining('the critic cut 3'), findsOneWidget);
 
+      // a tall screen, so the whole page is laid out at once
+      t.view.physicalSize = const Size(1080, 9000);
+      t.view.devicePixelRatio = 2.7;
+      addTearDown(t.view.reset);
       await t.pumpWidget(MaterialApp(home: NightShiftPage(shift: s)));
+      await t.pumpAndSettle();
       expect(find.text('Questions do not work'), findsOneWidget);
+      // the model said "kept", code said "rejected": the page shows the data won
+      expect(find.byKey(const Key('theory-overruled')), findsOneWidget);
+      expect(
+        find.text(
+          'Checked on your data: Left 0/5 with it vs 4/6 without (all moments)',
+        ),
+        findsOneWidget,
+      );
       expect(
         find.text('"Gym at 6. TikTok will still be here."'),
         findsOneWidget,
       );
-      await t.scrollUntilVisible(find.byKey(const Key('night-thinking')), 200);
       await t.tap(find.byKey(const Key('night-thinking')));
       await t.pumpAndSettle();
       expect(find.text('Gym lines got 4 of 6 after 22:00.'), findsOneWidget);

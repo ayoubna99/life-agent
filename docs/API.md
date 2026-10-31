@@ -179,7 +179,14 @@ The agent receives these as known facts and never asks for them.
 - `{"action":"nightshift"}` (step "get"): `{"shift": {day, status, model, shift: {theories, angles, notes, thinking,
   critic}}, "angles": [{angle, tried, left, pulled, lines}]}`.
 
-Angles: `{id, name, style: task|cost|goal, bands: [morning|afternoon|evening|night], apps: [], lines: [{id, text}]}`.
+Theories are testable and judged by code (theories.ts), never by the model: `{id, statement, when: {apps?, bands?,
+day_type?, depth?, task_soon?}, test: {tone?, topic?, style?, angle?}, status, confidence, evidence, matching, others,
+model_said}`. Status and confidence come from Beta posteriors of "with it" vs "without it" in the `when` moments
+(kept >= 0.9, rejected <= 0.1, 3+ tries on each side); "get" recomputes them on every read and also returns
+`beliefs` (the starting assumptions). Experiments also take `day_type` (weekday|weekend), `depth`
+(near|just_over|way_over|session), `task_soon`, `tone` and `topic` (migration `20261104000012_theory_context.sql`).
+
+Angles: `{id, name, style: task|cost|goal, tone, topic, bands: [morning|afternoon|evening|night], apps: [], lines: [{id, text}]}`.
 Experiments now also take `angle`, `line_id` and `pulled` ("Pull me out" tapped). Migration `20261103000011_night_shift.sql`.
 
 `schedule_alarm` is now available in every mode and takes `date: "today" | "tomorrow"`.

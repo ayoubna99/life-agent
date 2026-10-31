@@ -882,8 +882,17 @@ class _TheoryLine extends StatelessWidget {
         ),
         if (theory.evidence.isNotEmpty)
           Text(
-            theory.evidence,
+            'Checked on your data: ${theory.evidence}',
             style: t.bodySmall?.copyWith(color: dark ? Brand.peach : null),
+          ),
+        if (theory.overruled)
+          Text(
+            'Lify guessed "${theory.modelStatus}"; your results say "${_statusLabel(theory.status)}".',
+            key: const Key('theory-overruled'),
+            style: t.bodySmall?.copyWith(
+              color: dark ? Brand.peach : null,
+              fontStyle: FontStyle.italic,
+            ),
           ),
       ],
     );
@@ -915,9 +924,11 @@ class NightShiftPage extends StatelessWidget {
             ),
             child: Text(
               'Every night Muse Spark Open reads your whole history at once: every nudge, what you did next, your nights '
-              'and plans. It keeps or drops its theories, then writes tomorrow\'s lines; a second pass, your inner skeptic, '
-              'cuts the weak ones. During the day your phone picks the idea that works best for you right now and shows a '
-              'line you have never seen.',
+              'and plans. It proposes theories about what gets you off your phone, and when. It cannot grade them: code '
+              'checks each one on your real results (the moments it is about, with the theory vs without) and gives the '
+              'chance it is true. Then it writes tomorrow\'s lines to test them; a second pass, your inner skeptic, cuts '
+              'the weak ones. During the day your phone picks the idea that works best for you right now and shows a line '
+              'you have never seen.',
               style: t.bodyMedium?.copyWith(color: Brand.peach),
             ),
           ),
@@ -968,6 +979,21 @@ class NightShiftPage extends StatelessWidget {
                 ],
               ),
             ),
+          if (s.assumptions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('Starting assumptions', style: t.headlineSmall),
+            Text(
+              'What Lify assumes about most people until it has your results. Not facts: worth about 3 nudges each, '
+              'so your own results outweigh them within a day or two.',
+              style: t.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            for (final a in s.assumptions)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('· $a', style: t.bodyMedium),
+              ),
+          ],
           if (s.thinking != null) ...[
             const SizedBox(height: 12),
             ExpansionTile(

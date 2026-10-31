@@ -43,7 +43,23 @@ export interface ExperimentEvent {
   line_id?: string;
   /** The user tapped "Pull me out" on the card. */
   pulled?: boolean;
+  /** The moment in more detail, so theories can be checked on exactly the moments they are about. */
+  day_type?: DayType;
+  depth?: Depth;
+  task_soon?: boolean;
+  /** The tone and topic of the night shift's idea that was used. */
+  tone?: Tone;
+  topic?: Topic;
 }
+
+export type DayType = 'weekday' | 'weekend';
+export type Depth = 'near' | 'just_over' | 'way_over' | 'session';
+export type Tone = 'blunt' | 'playful' | 'question' | 'dare' | 'calm';
+export type Topic = 'task' | 'goal' | 'sleep' | 'cost' | 'plan' | 'other';
+export const DAY_TYPES: readonly DayType[] = ['weekday', 'weekend'];
+export const DEPTHS: readonly Depth[] = ['near', 'just_over', 'way_over', 'session'];
+export const TONES: readonly Tone[] = ['blunt', 'playful', 'question', 'dare', 'calm'];
+export const TOPICS: readonly Topic[] = ['task', 'goal', 'sleep', 'cost', 'plan', 'other'];
 
 export type Band = 'morning' | 'afternoon' | 'evening' | 'night';
 export const BANDS: readonly Band[] = ['morning', 'afternoon', 'evening', 'night'];
@@ -72,7 +88,12 @@ export function parseExperimentLog(raw: unknown): ExperimentEvent[] {
       (r.message === undefined || (typeof r.message === 'string' && r.message.length <= 300)) &&
       (r.angle === undefined || (typeof r.angle === 'string' && ID.test(r.angle) && r.angle.length <= 40)) &&
       (r.line_id === undefined || (typeof r.line_id === 'string' && ID.test(r.line_id))) &&
-      (r.pulled === undefined || typeof r.pulled === 'boolean');
+      (r.pulled === undefined || typeof r.pulled === 'boolean') &&
+      (r.day_type === undefined || DAY_TYPES.includes(r.day_type as DayType)) &&
+      (r.depth === undefined || DEPTHS.includes(r.depth as Depth)) &&
+      (r.task_soon === undefined || typeof r.task_soon === 'boolean') &&
+      (r.tone === undefined || TONES.includes(r.tone as Tone)) &&
+      (r.topic === undefined || TOPICS.includes(r.topic as Topic));
     if (!ok) throw new BadRequest('bad_experiments');
     seen.add(r.id as string);
     return {
@@ -93,6 +114,11 @@ export function parseExperimentLog(raw: unknown): ExperimentEvent[] {
       ...(typeof r.angle === 'string' ? { angle: r.angle } : {}),
       ...(typeof r.line_id === 'string' ? { line_id: r.line_id } : {}),
       ...(r.pulled === true ? { pulled: true } : {}),
+      ...(r.day_type !== undefined ? { day_type: r.day_type as DayType } : {}),
+      ...(r.depth !== undefined ? { depth: r.depth as Depth } : {}),
+      ...(typeof r.task_soon === 'boolean' ? { task_soon: r.task_soon } : {}),
+      ...(r.tone !== undefined ? { tone: r.tone as Tone } : {}),
+      ...(r.topic !== undefined ? { topic: r.topic as Topic } : {}),
     };
   });
 }
@@ -182,7 +208,7 @@ export interface LogEntry {
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // A small seeded generator, so the same results always give the same probabilities (and the tests are exact).
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

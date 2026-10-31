@@ -46,4 +46,29 @@ class NudgeBankTest {
         assertTrue(explore.explore)
         assertNotEquals(explore.angle.id, "gym")
     }
+
+    @Test fun startingBeliefsLeadUntilYourOwnResultsTakeOver() {
+        val blunt = BankAngle("blunt_task", "b", Arm.TASK, Band.values().toSet(), emptyList(), listOf(BankLine("b1", "x")), "blunt", "task")
+        val question = BankAngle("question", "q", Arm.GOAL, Band.values().toSet(), emptyList(), listOf(BankLine("q1", "y")), "question", "other")
+        fun share(stats: Map<String, ArmStat>) =
+            (0 until 2000).count { NudgeBank.pick(listOf(blunt, question), Band.NIGHT, "TikTok", emptySet(), stats, stats, Random(it.toLong()))!!.angle.id == "blunt_task" } / 2000.0
+        // no data at all: the starting assumption (concrete and blunt beats a question) gives a lead, not a lock
+        val fresh = share(emptyMap())
+        assertTrue(fresh > 0.5 && fresh < 0.9, "fresh: $fresh")
+        // this person is different: questions worked 5 of 6, blunt 0 of 6. Their data wins.
+        val theirs = share(mapOf("blunt_task" to ArmStat(6, 0), "question" to ArmStat(6, 5)))
+        assertTrue(theirs < 0.1, "theirs: $theirs")
+    }
+
+    @Test fun theMomentIsDescribedForTheTheoryChecks() {
+        assertEquals("weekend", Moment.dayType(java.util.Calendar.SUNDAY))
+        assertEquals("weekday", Moment.dayType(java.util.Calendar.MONDAY))
+        assertEquals("near", Moment.depth(25, 30))
+        assertEquals("just_over", Moment.depth(55, 30))
+        assertEquals("way_over", Moment.depth(61, 30))
+        val tasks = listOf(TaskLite("Gym", 60, "08:00", null, false), TaskLite("Water", 5, "06:30", null, false))
+        assertTrue(Moment.taskSoon(tasks, "06:15"))
+        assertTrue(!Moment.taskSoon(tasks, "05:30"), "the small chore does not count, the gym is 2.5 h away")
+        assertTrue(!Moment.taskSoon(listOf(TaskLite("Gym", 60, "08:00", null, true)), "07:00"), "done tasks do not count")
+    }
 }

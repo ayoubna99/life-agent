@@ -632,13 +632,23 @@ class Theory {
     required this.status,
     required this.evidence,
     this.angle,
+    this.modelStatus,
+    this.modelConfidence,
   });
 
   final String statement;
+
+  /// P(the theory is true), computed by code from the results (not by the model).
   final double confidence; // 0..1
-  final String status; // testing, kept, rejected
-  final String evidence;
+  final String status; // testing, kept, rejected (decided by code)
+  final String evidence; // counted by code
   final String? angle;
+
+  /// What the model itself guessed, to show where the data overruled it.
+  final String? modelStatus;
+  final double? modelConfidence;
+
+  bool get overruled => modelStatus != null && modelStatus != status;
 
   factory Theory.fromJson(Map<String, Object?> j) => Theory(
     statement: j['statement'] as String,
@@ -646,6 +656,9 @@ class Theory {
     status: j['status'] as String? ?? 'testing',
     evidence: j['evidence'] as String? ?? '',
     angle: j['angle'] as String?,
+    modelStatus: (j['model_said'] as Map?)?['status'] as String?,
+    modelConfidence: ((j['model_said'] as Map?)?['confidence'] as num?)
+        ?.toDouble(),
   );
 }
 
@@ -677,7 +690,11 @@ class NightShift {
     this.thinking,
     this.cut = 0,
     this.raw,
+    this.assumptions = const [],
   });
+
+  /// What Lify assumes about most people before it has your results (starting assumptions, not facts).
+  final List<String> assumptions;
 
   final String day;
   final String status; // draft, final
@@ -694,7 +711,11 @@ class NightShift {
 
   int get lineCount => angles.fold(0, (n, a) => n + a.lines.length);
 
-  static NightShift? fromJson(Object? stored, {Object? stats}) {
+  static NightShift? fromJson(
+    Object? stored, {
+    Object? stats,
+    Object? beliefs,
+  }) {
     if (stored is! Map) return null;
     final s = Map<String, Object?>.from(stored);
     final shift = Map<String, Object?>.from(s['shift'] as Map? ?? const {});
@@ -727,6 +748,9 @@ class NightShift {
       thinking: shift['thinking'] as String?,
       cut: ((shift['critic'] as Map?)?['cut'] as num?)?.toInt() ?? 0,
       raw: s,
+      assumptions: [
+        for (final w in ((beliefs as Map?)?['why'] as List? ?? const [])) '$w',
+      ],
     );
   }
 }

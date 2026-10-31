@@ -16,7 +16,8 @@ import { parseExperimentLog, summarizeExperiments } from './experiments.ts';
 import { parseNights } from './nights.ts';
 import { parseEveningRequest, runEvening } from './evening.ts';
 import { speakableText, synthesize, toBase64, ttsConfigFromEnv } from './tts.ts';
-import { historyText, NIGHT, runCritic, runStudy, usedLines, type StoredShift } from './nightshift.ts';
+import { historyText, judgeTheories, NIGHT, runCritic, runStudy, usedLines, type StoredShift } from './nightshift.ts';
+import { STARTING_BELIEFS } from './theories.ts';
 import { angleResults } from './experiments.ts';
 import { RestStore, StoreError } from './store.ts';
 import type { Store, UsageRow } from './store.ts';
@@ -134,8 +135,10 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
         const step = body.step ?? 'get';
         if (step === 'get') {
           const latest = await store.getNightShift();
-          const events = await store.getExperiments(addDays(new Date().toISOString().slice(0, 10), -14));
-          return json({ shift: latest, angles: angleResults(events) });
+          const events = await store.getExperiments(addDays(new Date().toISOString().slice(0, 10), -NIGHT.historyDays));
+          // the verdicts are recomputed on every read: always the newest results, always computed by code
+          if (latest) latest.shift.theories = judgeTheories(latest.shift.theories.filter((t) => t.when && t.test), events);
+          return json({ shift: latest, angles: angleResults(events), beliefs: STARTING_BELIEFS });
         }
         const day = body.day;
         if (!isDate(day)) throw new BadRequest('bad_date');
@@ -159,7 +162,7 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
           }
           const recent = events.slice(-NIGHT.maxEvents);
           const history = historyText({ profile, strategy, nights, plans, events: recent, previous });
-          const { shift, model } = await runStudy(history, day, usedLines(recent, previous), profile.name, deps);
+          const { shift, model } = await runStudy(history, day, usedLines(recent, previous), profile.name, deps, recent);
           const stored: StoredShift = { day, status: 'draft', shift, model };
           await store.saveNightShift(stored);
           return json({ shift: stored });

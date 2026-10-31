@@ -211,4 +211,32 @@ data class ExperimentResult(
     val angle: String? = null,
     val lineId: String? = null,
     val pulled: Boolean = false,
+    val moment: Moment? = null,
 )
+
+/**
+ * The moment of a nudge in more detail than the time of day, so the server can check each theory on exactly the
+ * moments it is about: weekday or weekend, how deep into the app (near the limit, just over, way over), whether an
+ * important task starts within 2 hours, and the tone and topic of the idea used.
+ */
+data class Moment(val dayType: String, val depth: String, val taskSoon: Boolean, val tone: String?, val topic: String?) {
+    companion object {
+        const val WAY_OVER_MINUTES = 30
+        const val TASK_SOON_MS = 2L * 60 * 60 * 1000
+
+        fun dayType(dayOfWeek: Int): String = if (dayOfWeek == java.util.Calendar.SATURDAY || dayOfWeek == java.util.Calendar.SUNDAY) "weekend" else "weekday"
+
+        fun depth(usedMinutes: Int, limitMinutes: Int): String = when {
+            usedMinutes < limitMinutes -> "near"
+            usedMinutes - limitMinutes <= WAY_OVER_MINUTES -> "just_over"
+            else -> "way_over"
+        }
+
+        /** An important task (15+ minutes, not done) starts within 2 hours of [nowHHmm]. */
+        fun taskSoon(tasks: List<TaskLite>, nowHHmm: String): Boolean {
+            fun min(hhmm: String) = hhmm.substring(0, 2).toInt() * 60 + hhmm.substring(3).toInt()
+            val now = min(nowHHmm)
+            return tasks.any { t -> !t.done && t.minutes >= 15 && t.startTime != null && min(t.startTime) - now in 0..(TASK_SOON_MS / 60_000) }
+        }
+    }
+}

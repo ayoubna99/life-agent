@@ -7,6 +7,7 @@ import org.ngdev.life_agent.core.Arm
 import org.ngdev.life_agent.core.ArmStat
 import org.ngdev.life_agent.core.BankAngle
 import org.ngdev.life_agent.core.BankLine
+import org.ngdev.life_agent.core.Moment
 import org.ngdev.life_agent.core.Band
 import org.ngdev.life_agent.core.ExperimentResult
 import org.ngdev.life_agent.core.InstalledApp
@@ -169,6 +170,7 @@ class NativeStore(context: Context) {
                 (0 until (bands?.length() ?: 0)).mapNotNull { Band.of(bands!!.getString(it)) }.toSet().ifEmpty { Band.values().toSet() },
                 a.optJSONArray("apps")?.let { x -> (0 until x.length()).map { x.getString(it) } } ?: emptyList(),
                 (0 until lines.length()).map { lines.getJSONObject(it) }.map { BankLine(it.getString("id"), it.getString("text")) },
+                a.optString("tone", "calm"), a.optString("topic", "other"),
             )
         }
     } catch (e: Exception) {
@@ -227,6 +229,7 @@ class NativeStore(context: Context) {
         val atMs: Long, val day: String, val time: String, val windowMs: Long, val leftWithinMs: Long, val demo: Boolean,
         val propensity: Double, val band: Band, val message: String,
         val angle: String? = null, val lineId: String? = null, val pulled: Boolean = false,
+        val moment: Moment? = null,
     )
 
     fun pending(): List<Pending> = try {
@@ -238,6 +241,7 @@ class NativeStore(context: Context) {
                 it.getLong("window"), it.getLong("leftWithin"), it.getBoolean("demo"),
                 it.optDouble("propensity", 1.0), Band.of(it.optString("band")) ?: Band.NIGHT, it.optString("message"),
                 it.optString("angle").takeIf { a -> a.isNotEmpty() }, it.optString("line").takeIf { l -> l.isNotEmpty() }, it.optBoolean("pulled", false),
+                it.optJSONObject("moment")?.let { m -> Moment(m.getString("dayType"), m.getString("depth"), m.getBoolean("taskSoon"), m.optString("tone").ifEmpty { null }, m.optString("topic").ifEmpty { null }) },
             )
         }
     } catch (e: Exception) {
@@ -252,7 +256,12 @@ class NativeStore(context: Context) {
                     .put("reason", p.reason.wire).put("at", p.atMs).put("day", p.day).put("time", p.time).put("window", p.windowMs)
                     .put("leftWithin", p.leftWithinMs).put("demo", p.demo)
                     .put("propensity", p.propensity).put("band", p.band.wire).put("message", p.message)
-                    .put("angle", p.angle ?: "").put("line", p.lineId ?: "").put("pulled", p.pulled),
+                    .put("angle", p.angle ?: "").put("line", p.lineId ?: "").put("pulled", p.pulled)
+                    .apply {
+                        p.moment?.let { m ->
+                            put("moment", JSONObject().put("dayType", m.dayType).put("depth", m.depth).put("taskSoon", m.taskSoon).put("tone", m.tone ?: "").put("topic", m.topic ?: ""))
+                        }
+                    },
             )
         }
         prefs.edit().putString("pending", arr.toString()).apply()
@@ -273,6 +282,11 @@ class NativeStore(context: Context) {
                         if (r.angle != null) put("angle", r.angle)
                         if (r.lineId != null) put("line_id", r.lineId)
                         if (r.pulled) put("pulled", true)
+                        r.moment?.let { m ->
+                            put("day_type", m.dayType).put("depth", m.depth).put("task_soon", m.taskSoon)
+                            if (m.tone != null) put("tone", m.tone)
+                            if (m.topic != null) put("topic", m.topic)
+                        }
                     },
             )
         }

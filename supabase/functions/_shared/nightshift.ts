@@ -13,7 +13,8 @@
 //
 // The model only proposes; code validates everything (lengths, no numbers about minutes, no repeats, ids).
 
-import { ARMS, BANDS, angleResults, type Arm, type Band, type ExperimentEvent } from './experiments.ts';
+import { ARMS, BANDS, TONES, TOPICS, angleResults, type Arm, type Band, type ExperimentEvent, type Tone, type Topic } from './experiments.ts';
+import { judge, parseTheoryShape, STARTING_BELIEFS, type Counts, type TheoryTest, type TheoryWhen } from './theories.ts';
 import { callFirst, MuseError, sized, withEffort, type MuseConfig } from './muse.ts';
 import type { PhoneNight } from './nights.ts';
 import type { PlanData } from './plan.ts';
@@ -25,9 +26,17 @@ export interface Theory {
   id: string;
   statement: string;
   angle: string | null;
-  confidence: number; // 0..1
+  /** The moments it is about, and the property it claims works there: what code checks. */
+  when: TheoryWhen;
+  test: TheoryTest;
+  /** Set by CODE from the results (see theories.ts), never by the model. */
+  confidence: number; // P(it is true), 0..1
   status: 'testing' | 'kept' | 'rejected';
   evidence: string;
+  matching: Counts;
+  others: Counts;
+  /** What the model itself guessed, to show where the data overruled it. */
+  model_said: { status: string; confidence: number } | null;
 }
 
 export interface BankLine {
@@ -39,6 +48,8 @@ export interface Angle {
   id: string;
   name: string;
   style: Arm;
+  tone: Tone;
+  topic: Topic;
   bands: Band[];
   apps: string[]; // empty: any app
   lines: BankLine[];
@@ -114,17 +125,34 @@ export function readJson(text: string): Record<string, unknown> {
   }
 }
 
-/** Code checks what the model proposed: shapes, sizes, every line against [lineProblem]. Lines get stable ids. */
-export function validateShift(raw: Record<string, unknown>, day: string, used: Set<string>, name?: string): Shift {
-  const theories: Theory[] = [];
+/** Re-judges theories on the results (the app shows verdicts that are always up to date). */
+export function judgeTheories(theories: Theory[], events: ExperimentEvent[]): Theory[] {
+  return theories.map((t) => {
+    const v = judge(t.when, t.test, events);
+    return { ...t, status: v.status, confidence: v.confidence, evidence: v.evidence, matching: v.matching, others: v.others };
+  });
+}
+
+/**
+ * Code checks what the model proposed: shapes, sizes, every line against [lineProblem]. Lines get stable ids. A theory
+ * without a testable shape is dropped; the status, confidence and evidence of the others come from [events], not from
+ * the model.
+ */
+export function validateShift(raw: Record<string, unknown>, day: string, used: Set<string>, name?: string, events: ExperimentEvent[] = []): Shift {
+  const proposed: Theory[] = [];
   for (const [i, t] of (Array.isArray(raw.theories) ? raw.theories : []).slice(0, NIGHT.maxTheories).entries()) {
     const r = t as Record<string, unknown>;
     const statement = str(r?.statement, 200);
-    if (!statement) continue;
+    const shape = parseTheoryShape(r?.when, r?.test);
+    if (!statement || !shape) continue;
     const c = typeof r.confidence === 'number' && Number.isFinite(r.confidence) ? Math.min(1, Math.max(0, r.confidence)) : 0.5;
-    const status = r.status === 'kept' || r.status === 'rejected' ? r.status : 'testing';
-    theories.push({ id: slug(r.id, `t${i + 1}`), statement, angle: typeof r.angle === 'string' ? slug(r.angle, '') || null : null, confidence: Math.round(c * 100) / 100, status, evidence: str(r.evidence, 200) });
+    proposed.push({
+      id: slug(r.id, `t${i + 1}`), statement, angle: shape.test.angle ?? null, when: shape.when, test: shape.test,
+      confidence: 0, status: 'testing', evidence: '', matching: { tried: 0, left: 0 }, others: { tried: 0, left: 0 },
+      model_said: { status: typeof r.status === 'string' ? r.status.slice(0, 20) : 'testing', confidence: Math.round(c * 100) / 100 },
+    });
   }
+  const theories = judgeTheories(proposed, events);
   const seen = new Set(used);
   const angles: Angle[] = [];
   const ids = new Set<string>();
@@ -135,6 +163,8 @@ export function validateShift(raw: Record<string, unknown>, day: string, used: S
     let id = slug(r?.id, `a${i + 1}`);
     while (ids.has(id)) id = `${id.slice(0, 37)}_${i}`;
     const style: Arm = ARMS.includes(r?.style as Arm) ? (r.style as Arm) : 'goal';
+    const tone: Tone = TONES.includes(r?.tone as Tone) ? (r.tone as Tone) : 'calm';
+    const topic: Topic = TOPICS.includes(r?.topic as Topic) ? (r.topic as Topic) : 'other';
     const bands = (Array.isArray(r?.bands) ? r.bands : []).filter((b): b is Band => BANDS.includes(b as Band));
     const apps = (Array.isArray(r?.apps) ? r.apps : []).map((x) => str(x, 40)).filter(Boolean).slice(0, 6);
     const lines: BankLine[] = [];
@@ -147,7 +177,7 @@ export function validateShift(raw: Record<string, unknown>, day: string, used: S
     }
     if (lines.length === 0) continue;
     ids.add(id);
-    angles.push({ id, name: str(r.name, 60) || id.replace(/_/g, ' '), style, bands: bands.length ? [...new Set(bands)] : [...BANDS], apps, lines });
+    angles.push({ id, name: str(r.name, 60) || id.replace(/_/g, ' '), style, tone, topic, bands: bands.length ? [...new Set(bands)] : [...BANDS], apps, lines });
   }
   if (angles.length === 0) throw new MuseError('bad_output');
   return { theories, angles, notes: str(raw.notes, 400), thinking: null, critic: null };
@@ -173,28 +203,32 @@ export function historyText(h: {
   for (const n of h.nights) out.push(`${n.night}: ${n.down} / ${n.up ?? '?'}`);
   out.push('# Plans');
   for (const pl of h.plans) out.push(`${pl.date}: ${pl.data.tasks.map((t) => `${t.start_time ?? '--:--'} ${t.title} (${t.minutes} min)`).join('; ') || 'no tasks'}`);
-  out.push(`# Every nudge, oldest first (${h.events.length}): day time band app trigger angle style "words" -> what they did`);
+  out.push(`# Every nudge, oldest first (${h.events.length}): day time band day_type app trigger depth task_soon angle style tone topic "words" -> what they did`);
   for (const e of h.events) {
-    out.push(`${e.day} ${e.time} ${e.context ?? '-'} ${e.app} ${e.reason} ${e.angle ?? '-'} ${e.arm} "${(e.message ?? '').replace(/"/g, "'")}" -> ${ago(e)}${e.pulled ? ' (tapped Pull me out)' : ''}`);
+    out.push(`${e.day} ${e.time} ${e.context ?? '-'} ${e.day_type ?? '-'} ${e.app} ${e.reason} ${e.depth ?? '-'} ${e.task_soon === undefined ? '-' : e.task_soon ? 'task_soon' : 'no_task'} ${e.angle ?? '-'} ${e.arm} ${e.tone ?? '-'} ${e.topic ?? '-'} "${(e.message ?? '').replace(/"/g, "'")}" -> ${ago(e)}${e.pulled ? ' (tapped Pull me out)' : ''}`);
   }
   const stats = angleResults(h.events);
   out.push('# Results per angle');
   for (const s of stats) out.push(`${s.angle}: ${s.left}/${s.tried} left, ${s.pulled} pulled out, ${s.lines} different lines`);
-  out.push('# Your theories from last time');
+  out.push('# Your theories from last time, with the VERDICT CODE COMPUTED on the results (not your own guess)');
   if (!h.previous) out.push('none: this is the first night shift');
-  else for (const t of h.previous.shift.theories) out.push(`${t.id} [${t.status}, ${t.confidence}] ${t.statement} (angle ${t.angle ?? '-'}; evidence: ${t.evidence})`);
+  else for (const t of judgeTheories(h.previous.shift.theories.filter((x) => x.when && x.test), h.events)) {
+    out.push(`${t.id} [${t.status}, P=${t.confidence}] ${t.statement} | when ${JSON.stringify(t.when)} test ${JSON.stringify(t.test)} | ${t.evidence}`);
+  }
   if (h.previous) {
     out.push('# Last bank');
-    for (const a of h.previous.shift.angles) out.push(`${a.id} (${a.style}; ${a.bands.join('/')}; ${a.apps.join('/') || 'any app'}): ${a.lines.map((l) => `"${l.text}"`).join(' ')}`);
+    for (const a of h.previous.shift.angles) out.push(`${a.id} (${a.style}, ${a.tone ?? '-'}, ${a.topic ?? '-'}; ${a.bands.join('/')}; ${a.apps.join('/') || 'any app'}): ${a.lines.map((l) => `"${l.text}"`).join(' ')}`);
   }
   return out.join('\n');
 }
 
 const STUDY_PROMPT = `You are Lify's night shift: a scientist whose only subject is this one person. Your job is to find out what actually gets them off a doomscrolling app, and to write tomorrow's experiment.
 
-Read the whole history below. Then:
-1. THEORIES. For each theory from last time decide: "kept" (the results support it), "rejected" (they contradict it) or "testing" (not enough data yet). Update its confidence (0 to 1) and give the evidence with real counts from the history ("left 4 of 6 after 22:00"). Propose new theories where the data suggests something. At most 8. A theory is about this person and nudges, never about health.
-2. ANGLES. An angle is the idea behind a nudge (for example "blunt, about tomorrow's gym, at night"). Give each a short id (lowercase, underscores), a name, a style ("task" = their next important task, "cost" = what the time costs them, "goal" = their own goal or why), the time-of-day bands where it fits (morning, afternoon, evening, night) and optionally the apps. Keep the angles that work and give them MORE lines; add 1 or 2 new angles to test; drop the ones that failed. At most 8 angles.
+Read the whole history below. Scrolling has different causes at different moments (TikTok at night is not TikTok in the morning, a weekday is not a weekend, just opened is not way over the limit, before an important task is avoidance): look for what works WHERE.
+1. THEORIES. Each theory is a testable claim: "in these moments (when), nudges with this property (test) get them off the app more than the other nudges in the same moments". CODE will test every theory on the real results and set its status and confidence; yours are only your guess. Look at the verdicts code computed for last time's theories: keep the ones still worth testing, drop the rejected ones, propose new ones where the data suggests something. At most 8. Never about health.
+   when: any of apps (names), bands (morning, afternoon, evening, night), day_type (weekday, weekend), depth (near, just_over, way_over, session), task_soon (true/false). Leave out what does not matter.
+   test: one or more of tone (blunt, playful, question, dare, calm), topic (task, goal, sleep, cost, plan, other), style (task, cost, goal), angle (an angle id).
+2. ANGLES. An angle is the idea behind a nudge (for example "blunt, about tomorrow's gym, at night"). Give each a short id (lowercase, underscores), a name, a style ("task" = their next important task, "cost" = what the time costs them, "goal" = their own goal or why), a tone and a topic (same values as above), the time-of-day bands where it fits and optionally the apps. Design angles that TEST your theories (one that matches the theory and one that does not, in the same moments). Keep the angles that work and give them MORE lines; add 1 or 2 new ones; drop the ones that failed. At most 8 angles. With little data, lean on these starting assumptions about most people: STARTING.
 3. LINES. For each angle up to 6 lines. Every line:
    - at most 12 words, one sentence or two very short ones;
    - no minutes, no hours, no "you're at", no limits: the card title already shows the numbers;
@@ -206,7 +240,7 @@ Read the whole history below. Then:
 4. NOTES: two sentences on what you learned tonight.
 
 Answer with JSON only:
-{"theories":[{"id":"","statement":"","angle":"","confidence":0.0,"status":"testing","evidence":""}],"angles":[{"id":"","name":"","style":"goal","bands":["night"],"apps":[],"lines":[""]}],"notes":""}`;
+{"theories":[{"id":"","statement":"","when":{"bands":["night"],"depth":["way_over"]},"test":{"tone":"blunt","topic":"task"},"confidence":0.0,"status":"testing"}],"angles":[{"id":"","name":"","style":"goal","tone":"blunt","topic":"task","bands":["night"],"apps":[],"lines":[""]}],"notes":""}`.replace('STARTING', STARTING_BELIEFS.why.join(' '));
 
 const CRITIC_PROMPT = `You are this person's inner skeptic. Below are lines an app will show them when they are stuck scrolling. For each line ask: would this really make them close the app right now? Cut every line that is generic (could be sent to anyone), preachy, guilt-tripping, confusing, too long, or too similar to another line. Keep the sharp, personal, surprising ones. Be strict but keep at least one line per angle when it is decent.
 
@@ -221,7 +255,7 @@ const effortFor = (models: MuseConfig[], effort: 'low' | 'medium' | 'high', want
   models.map((m) => sized(withEffort(m, effort), want));
 
 /** Step 1: the study. Returns the validated draft and which model wrote it. */
-export async function runStudy(history: string, day: string, used: Set<string>, name: string | undefined, deps: NightDeps): Promise<{ shift: Shift; model: string }> {
+export async function runStudy(history: string, day: string, used: Set<string>, name: string | undefined, deps: NightDeps, events: ExperimentEvent[] = []): Promise<{ shift: Shift; model: string }> {
   const { step, model } = await callFirst(
     effortFor(deps.models, 'medium', { maxTokens: NIGHT.studyTokens, timeoutMs: NIGHT.studyTimeoutMs }),
     [
@@ -232,7 +266,7 @@ export async function runStudy(history: string, day: string, used: Set<string>, 
     deps.fetchImpl ?? fetch,
   );
   if (step.kind !== 'text') throw new MuseError('bad_output');
-  const shift = validateShift(readJson(step.text), day, used, name);
+  const shift = validateShift(readJson(step.text), day, used, name, events);
   if (step.reasoning) shift.thinking = step.reasoning.replace(/\s+/g, ' ').trim().slice(0, NIGHT.thinkingChars);
   return { shift, model };
 }

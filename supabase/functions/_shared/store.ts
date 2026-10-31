@@ -364,6 +364,11 @@ export class RestStore implements Store {
         angle: e.angle ?? null,
         line_id: e.line_id ?? null,
         pulled: e.pulled === true,
+        day_type: e.day_type ?? null,
+        depth: e.depth ?? null,
+        task_soon: e.task_soon ?? null,
+        tone: e.tone ?? null,
+        topic: e.topic ?? null,
       })),
       headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
     });
@@ -372,7 +377,7 @@ export class RestStore implements Store {
   async getExperiments(since: string): Promise<ExperimentEvent[]> {
     const rows = (await this.rest(
       'experiments',
-      `experiments?day=gte.${encodeURIComponent(since)}&select=event_id,day,local_time,app,arm,explore,reason,left_app,seconds_after,window_seconds,demo,propensity,context,message,angle,line_id,pulled&order=id.asc&limit=1000`,
+      `experiments?day=gte.${encodeURIComponent(since)}&select=event_id,day,local_time,app,arm,explore,reason,left_app,seconds_after,window_seconds,demo,propensity,context,message,angle,line_id,pulled,day_type,depth,task_soon,tone,topic&order=id.asc&limit=1000`,
     )) as Record<string, unknown>[];
     return rows.map((r) => ({
       id: r.event_id as string,
@@ -392,6 +397,11 @@ export class RestStore implements Store {
       ...(typeof r.angle === 'string' ? { angle: r.angle } : {}),
       ...(typeof r.line_id === 'string' ? { line_id: r.line_id } : {}),
       ...(r.pulled === true ? { pulled: true } : {}),
+      ...(typeof r.day_type === 'string' ? { day_type: r.day_type as ExperimentEvent['day_type'] } : {}),
+      ...(typeof r.depth === 'string' ? { depth: r.depth as ExperimentEvent['depth'] } : {}),
+      ...(typeof r.task_soon === 'boolean' ? { task_soon: r.task_soon } : {}),
+      ...(typeof r.tone === 'string' ? { tone: r.tone as ExperimentEvent['tone'] } : {}),
+      ...(typeof r.topic === 'string' ? { topic: r.topic as ExperimentEvent['topic'] } : {}),
     }));
   }
 

@@ -131,7 +131,11 @@ class AgentApi {
       if (day != null) 'day': day,
       if (test) 'test': true,
     });
-    return NightShift.fromJson(json['shift'], stats: json['angles']);
+    return NightShift.fromJson(
+      json['shift'],
+      stats: json['angles'],
+      beliefs: json['beliefs'],
+    );
   }
 
   Future<ExperimentResults> experiments({

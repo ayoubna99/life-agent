@@ -30,8 +30,9 @@ const ev = (i: number, angle: string, left: boolean, message: string): Experimen
 
 const STUDY = {
   theories: [
-    { id: 'gym_at_night', statement: 'He leaves when tomorrow\'s gym is mentioned after 22:00', angle: 'gym_blunt', confidence: 0.72, status: 'kept', evidence: 'left 2 of 2' },
-    { id: 'questions', statement: 'Questions do not work on him', angle: null, confidence: 1.7, status: 'weird', evidence: 'stayed 1 of 1' },
+    { id: 'gym_at_night', statement: 'He leaves when tomorrow\'s gym is mentioned at night', when: { bands: ['night'] }, test: { angle: 'gym_blunt' }, confidence: 0.72, status: 'kept', evidence: 'left 2 of 2' },
+    { id: 'questions', statement: 'Questions do not work on him', when: {}, test: { tone: 'question' }, confidence: 1.7, status: 'weird', evidence: 'stayed 1 of 1' },
+    { id: 'vibes', statement: 'He likes good vibes', test: { mood: 'happy' } }, // nothing code can test: dropped
   ],
   angles: [
     {
@@ -70,8 +71,10 @@ test('code checks what the model proposed: ids, bands, styles, bad lines out, em
   assert.deepEqual(gym.lines.map((l) => l.id), ['gym_blunt_20261030_1', 'gym_blunt_20261030_2']);
   assert.deepEqual(gym.bands, ['night']);
   assert.deepEqual(s.angles[1].bands, ['morning', 'afternoon', 'evening', 'night'], 'no band given: any time');
-  assert.equal(s.theories[1].confidence, 1);
-  assert.equal(s.theories[1].status, 'testing');
+  assert.equal(s.theories.length, 2, 'a theory code cannot test is dropped');
+  assert.equal(s.theories[1].status, 'testing', 'no data yet: the model saying "kept" or 170% changes nothing');
+  assert.ok(Math.abs(s.theories[1].confidence - 0.5) < 0.05, 'no data: a coin flip');
+  assert.deepEqual(s.theories[1].model_said, { status: 'weird', confidence: 1 });
   assert.throws(() => validateShift({ angles: [{ id: 'x', lines: ['You are at your limit.'] }] }, '2026-10-30', new Set()));
 });
 

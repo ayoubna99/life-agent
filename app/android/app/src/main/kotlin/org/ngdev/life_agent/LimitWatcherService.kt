@@ -23,6 +23,7 @@ import org.ngdev.life_agent.core.NudgeReason
 import org.ngdev.life_agent.core.NudgeTitle
 import org.ngdev.life_agent.core.NudgeBank
 import org.ngdev.life_agent.core.LogicalDay
+import org.ngdev.life_agent.core.Moment
 import org.ngdev.life_agent.core.SessionRules
 import org.ngdev.life_agent.core.OutcomeMeter
 import org.ngdev.life_agent.core.UsageAggregator
@@ -229,6 +230,10 @@ class LimitWatcherService : Service() {
                 leftWithinMs = if (demo) DemoPolicy.LEFT_WITHIN_MS else OutcomeMeter.LEFT_WITHIN_MS,
                 demo = demo, propensity = propensity, band = band, message = text,
                 angle = fromBank?.angle?.id, lineId = fromBank?.line?.id,
+                moment = Moment(
+                    Moment.dayType(cal.get(Calendar.DAY_OF_WEEK)), Moment.depth(used, limit.minutes),
+                    Moment.taskSoon(store.tasks(LogicalDay.today(now, tz)), hhmm), fromBank?.angle?.tone, fromBank?.angle?.topic,
+                ),
             ),
         )
         return if (demo) 5_000L else 20_000L
@@ -279,7 +284,7 @@ class LimitWatcherService : Service() {
                     if (p.angle != null) store.recordAngle(p.angle, o.left || p.pulled, context)
                     ExperimentResult(
                         p.id, p.day, p.time, p.app, p.arm, p.explore, p.reason, o.left || p.pulled, o.secondsAfter, (p.windowMs / 1000).toInt(), p.demo,
-                        p.propensity, p.band, p.message, p.angle, p.lineId, p.pulled,
+                        p.propensity, p.band, p.message, p.angle, p.lineId, p.pulled, p.moment,
                     )
                 }
                 store.saveArmStats(stats)
