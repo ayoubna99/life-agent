@@ -56,7 +56,8 @@ off the phone and onto what you said matters.
 ## 📝 Hackathon disclosure
 
 Before the hackathon I built an early prototype of this idea: an Android app with Google login, a screen-time
-display and app limits with generic notifications. It had **no AI agent and no AI features of any kind**.
+display and app limits with generic notifications. Its backend only handled the Google sign-in: no other APIs, no
+data processing. It had **no AI agent and no AI features of any kind**.
 
 **Everything in this repository is brand new and was built during the hackathon:**
 - a new codebase, written from scratch: no code from the prototype is reused;
