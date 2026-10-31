@@ -25,6 +25,7 @@
   <a href="#-architecture">Architecture</a> ·
   <a href="#-how-judges-can-verify">Verify it</a> ·
   <a href="#-validate-with-your-own-meta-key">Your own key</a> ·
+  <a href="#-permissions-what-life-needs-and-why">Permissions</a> ·
   <a href="#-privacy">Privacy</a>
 </p>
 
@@ -197,17 +198,17 @@ The model writes; **code decides and measures**. Nothing below can be changed by
 5. **Strategy memory:** each evening review writes a new strategy version. The server refuses any change that doesn't
    cite a number, and every version is kept (day 1 vs. today).
 6. **Real Android engineering:**
-   - a foreground watcher reading `UsageStatsManager` events;
-   - a custom overlay card with a "Pull me out" button. On phones that hide overlays it falls back to a heads-up notification automatically;
-   - a watchdog alarm that restarts the watcher if the phone kills it;
-   - exact alarms and real Clock-app alarms;
-   - phone-down detection from unlock events, which ignores notification wake-ups, alarms and calls.
+    - a foreground watcher reading `UsageStatsManager` events;
+    - a custom overlay card with a "Pull me out" button. On phones that hide overlays it falls back to a heads-up notification automatically;
+    - a watchdog alarm that restarts the watcher if the phone kills it;
+    - exact alarms and real Clock-app alarms;
+    - phone-down detection from unlock events, which ignores notification wake-ups, alarms and calls.
 7. **Production basics:**
-   - anonymous auth with row-level security on every table;
-   - per-user and global daily caps;
-   - keys only in server secrets;
-   - every link checked before it is saved;
-   - 409 automated tests.
+    - anonymous auth with row-level security on every table;
+    - per-user and global daily caps;
+    - keys only in server secrets;
+    - every link checked before it is saved;
+    - 409 automated tests.
 8. **Open source:** [MIT license](LICENSE).
 
 Code: [`Experiment.kt`](app/android/app/src/main/kotlin/org/ngdev/life_agent/core/Experiment.kt) ·
@@ -304,9 +305,9 @@ Life steps in after you've been in it for a while.*
 ```
 
 - **Three agent modes, one agent:**
-  - **planning** (evening): asks until it has everything, then saves the plan;
-  - **execute** (morning): sets up the day on the phone through device tool calls;
-  - **review** (evening): compares the plan with real usage and updates the strategy.
+    - **planning** (evening): asks until it has everything, then saves the plan;
+    - **execute** (morning): sets up the day on the phone through device tool calls;
+    - **review** (evening): compares the plan with real usage and updates the strategy.
 - **The server remembers the conversation;** the phone sends only new messages and tool results.
 - **API reference:** [docs/API.md](docs/API.md).
 
@@ -347,6 +348,8 @@ See [app/README.md](app/README.md) for permissions and first run.
 ## 🔍 How judges can verify
 
 1. **Install the [APK](https://github.com/ayoubna99/life-agent/releases/latest)** on an Android phone (Android 10+).
+   No Android phone? Install [Android Studio](https://developer.android.com/studio) (free, Mac or Windows), open
+   **Device Manager**, start an emulator (any phone with Android 10+), and drag the APK onto it.
 2. Finish the 5 onboarding slides. Allow **Usage access**, **Show over other apps** and **Notifications**. In Settings
    → Check Lify, set **Battery** to unrestricted.
 3. **Talk to Lify:** tap *Plan tomorrow* and plan by voice or text. Saving the plan puts tomorrow's tasks and alarms on
@@ -365,8 +368,9 @@ The judging build uses a shared demo backend with a daily cap per user, so a jud
 
 ## 🔑 Validate with your own Meta key
 
-The APK above runs on the shared demo backend. To test with your own Meta key instead, run your own copy. No code
-changes: every key is a server secret.
+You can download the ready-to-use APK from [Releases](https://github.com/ayoubna99/life-agent/releases/latest): it works
+as is, nothing to set up. If you want to use your own keys, follow these steps. No code changes are needed: every key is
+a server secret.
 
 **1. Backend (about 10 minutes)**: a free Supabase project, Node 22.6+:
 ```
@@ -402,6 +406,27 @@ Install `app/build/app/outputs/flutter-apk/app-release.apk` and follow the steps
 
 ---
 
+## 📱 Permissions: what Life needs, and why
+
+Life asks for each permission on its own screen and explains it first. Only **Usage access** is needed for the core
+loop; everything else makes Life better but is optional. Settings → Check Lify shows which ones are on, with a Fix button.
+
+| Permission | Why | Needed? |
+|---|---|---|
+| **Usage access** | To see which app is in front and for how long (never what's in it). Screen time, nudges, nights and step-down targets all come from this. | **Required** |
+| **Notifications** | The evening "let's plan tomorrow" notification, reminders, and nudges when a card can't be shown | Recommended |
+| **Show over other apps** | The nudge card on top of the app you're in. Without it, nudges come as notifications. | Optional |
+| **Alarms and reminders** (exact alarms) | In-app task alarms at the exact minute, and the evening notification on time. Without it, Life can't set in-app task alarms (Clock-app alarms still work). | Recommended |
+| **Battery: unrestricted** | Some phones (Samsung, Xiaomi) stop background apps, and the watcher with them. | Optional, recommended |
+| **Calendar** (read only) | Plan around your real events, and remind you before them | Optional |
+| **Microphone** | Talk to Lify instead of typing | Optional |
+| Internet, run in the background, start after a reboot, set a Clock alarm | Granted by Android automatically, no prompt. The background watcher shows a silent "Life" notification, as Android requires. | Automatic |
+
+Life never asks for contacts, location, SMS, the camera roll or your accounts. Photos and PDFs are only read when you
+pick them yourself.
+
+---
+
 ## 🔒 Privacy
 
 | What | Where it goes | Kept |
@@ -431,15 +456,15 @@ Install `app/build/app/outputs/flutter-apk/app-release.apk` and follow the steps
 ## 📊 Status
 
 - **Tested end to end on a real Android phone (Samsung):**
-  - planning chats with live Muse Spark tool calls;
-  - Muse Spark Open on Baseten;
-  - the night shift and the nudge bank;
-  - the nudge cards and "Pull me out";
-  - screen time and phone-down nights;
-  - the evening notification;
-  - alarms and calendar;
-  - voice;
-  - Check Lify.
+    - planning chats with live Muse Spark tool calls;
+    - Muse Spark Open on Baseten;
+    - the night shift and the nudge bank;
+    - the nudge cards and "Pull me out";
+    - screen time and phone-down nights;
+    - the evening notification;
+    - alarms and calendar;
+    - voice;
+    - Check Lify.
 - **License:** [MIT](LICENSE).
 - **Automated tests:** 409 in all: 193 backend, 150 Flutter, 66 Kotlin (JVM). The Android code compiles against the real Android 15 classes.
 - **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes. One person over a few
