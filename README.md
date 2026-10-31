@@ -21,7 +21,9 @@
   <a href="#-demo">Demo</a> ·
   <a href="#-measured-on-a-real-phone">Measured</a> ·
   <a href="#-the-night-shift-lify-is-a-scientist-and-you-are-its-only-subject">The night shift</a> ·
-  <a href="#-how-life-meets-the-judging-criteria">Judging criteria</a> ·
+  <a href="#-why-it-matters">Why it matters</a> ·
+  <a href="#-how-life-uses-metas-muse-models">Meta's Muse</a> ·
+  <a href="#-under-the-hood">Under the hood</a> ·
   <a href="#-architecture">Architecture</a> ·
   <a href="#-how-judges-can-verify">Verify it</a> ·
   <a href="#-validate-with-your-own-meta-key">Your own key</a> ·
@@ -77,6 +79,13 @@ commit dates, the [day-by-day migrations](supabase/migrations) and the tests sho
 > **[▶ Watch the 3-minute demo](DEMO_URL)** · **[⬇ Download the APK](https://github.com/ayoubna99/life-agent/releases/latest)**
 > (Android 10+; install it, then follow [How judges can verify](#-how-judges-can-verify))
 
+The demo opens with Jake showing the problem: scrolling at night and the "let's plan tomorrow" notification.
+Then it's the real app on a real phone:
+- planning tomorrow by voice, with a PDF in and a PDF out;
+- a nudge card sliding over TikTok, and **Pull me out**;
+- Your path (the step-down targets);
+- the night shift, and Lify's theories verified on real results.
+
 <p align="center">
   <img src="docs/media/card.png" width="230" alt="A nudge card over TikTok with the Pull me out button" />
   <img src="docs/media/theories.png" width="230" alt="Lify's theories, verified on the user's own results" />
@@ -98,7 +107,7 @@ to end on a real device; it is not a study of whether Life changes anyone's habi
 | What | Result |
 |---|---|
 | Nudges shown and measured by the phone (outside demo mode) | **39**: each one logged with its moment, its words and what happened next |
-| Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events. There is no control group yet, so this is not an effect size; the off-policy lift (Technical depth, 4) needs more data before it means anything. |
+| Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events. There is no control group yet, so this is not an effect size; the off-policy lift (Under the hood, 4) needs more data before it means anything. |
 | Night shift, end to end | Muse Spark Open read the history, wrote theories and the nudge bank, and the critic finished **41 s** after the draft was saved |
 | The bank in use | Ideas from the night shift were shown and scored (in demo mode): the "night TikTok wind-down" idea got the user to leave **2 of 3** times |
 
@@ -161,9 +170,7 @@ Code: [`nightshift.ts`](supabase/functions/_shared/nightshift.ts) · [`theories.
 
 ---
 
-## 🏆 How Life meets the judging criteria
-
-### Impact (30%)
+## 🎯 Why it matters
 - **Less, one step at a time, using a known method.** Life uses the **changing-criterion** method (step-by-step
   targets, each one earned). It starts from your *typical* day (the median of the last 7, not your worst), sets a target about 15% lower,
   and steps down again only after you hit it on 2 of the last 3 days. A missed day never raises it, and it stops at your
@@ -180,7 +187,9 @@ Code: [`nightshift.ts`](supabase/functions/_shared/nightshift.ts) · [`theories.
 - **It respects you:** at most 4 nudges per app per day, at least 20 minutes apart, spaced further out the longer you go
   over (+15, +45, +105 minutes). Your own rules ("every 30 minutes on any app, get me out") replace them.
 
-### Meta AI tooling (25%)
+---
+
+## 🧠 How Life uses Meta's Muse models
 Four Meta models, each used for what it is uniquely good at:
 
 | Model | Job in Life | Why this model |
@@ -204,7 +213,9 @@ Four Meta models, each used for what it is uniquely good at:
 - Code: [`muse.ts`](supabase/functions/_shared/muse.ts) (routing, failover, reasoning effort),
   [`nudge.ts`](supabase/functions/_shared/nudge.ts), [`evening.ts`](supabase/functions/_shared/evening.ts).
 
-### Technical depth (20%)
+---
+
+## 🔧 Under the hood
 Muse writes, plans and forms theories; Life's engine tests, measures and learns from every result.
 
 1. **Contextual Thompson sampling with a 3-level prior (phone, Kotlin):** each idea has a Beta posterior for this app at
@@ -236,14 +247,6 @@ Muse writes, plans and forms theories; Life's engine tests, measures and learns 
 Code: [`Experiment.kt`](app/android/app/src/main/kotlin/org/ngdev/life_agent/core/Experiment.kt) ·
 [`experiments.ts`](supabase/functions/_shared/experiments.ts) · [`strategy.ts`](supabase/functions/_shared/strategy.ts) ·
 [`Nights.kt`](app/android/app/src/main/kotlin/org/ngdev/life_agent/core/Nights.kt)
-
-### Demo (25%)
-The [demo](#-demo) opens with Jake showing the problem: scrolling at night and the "let's plan tomorrow" notification.
-Then it's the real app on a real phone:
-- planning tomorrow by voice, with a PDF in and a PDF out;
-- a nudge card sliding over TikTok, and **Pull me out**;
-- Your path (the step-down targets);
-- the night shift, and Lify's theories verified on real results.
 
 ---
 
