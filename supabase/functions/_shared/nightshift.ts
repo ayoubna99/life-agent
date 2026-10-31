@@ -21,6 +21,7 @@ import type { PlanData } from './plan.ts';
 import type { Profile } from './profile.ts';
 import type { Strategy } from './strategy.ts';
 import { strategyForPrompt } from './strategy.ts';
+import type { Taper } from './taper.ts';
 
 export interface Theory {
   id: string;
@@ -37,6 +38,8 @@ export interface Theory {
   others: Counts;
   /** What the model itself guessed, to show where the data overruled it. */
   model_said: { status: string; confidence: number } | null;
+  /** The same theory's verdict last night (null when it is new tonight). */
+  before?: { status: string; confidence: number } | null;
 }
 
 export interface BankLine {
@@ -61,7 +64,9 @@ export interface Shift {
   notes: string;
   /** A short excerpt of the model's own visible reasoning (the lab notebook shows "how Lify thought about it"). */
   thinking: string | null;
-  critic: { cut: number; reasons: string[] } | null;
+  critic: { cut: number; reasons: string[]; lines?: { text: string; why: string }[] } | null;
+  /** What the study read in its one request. */
+  read?: { nudges: number; nights: number; plans: number; days: number };
 }
 
 export interface StoredShift {
@@ -123,6 +128,15 @@ export function readJson(text: string): Record<string, unknown> {
   } catch {
     throw new MuseError('bad_output');
   }
+}
+
+/** Marks each theory with last night's verdict for the same theory (new ones get null). */
+export function withBefore(theories: Theory[], previous: Theory[]): Theory[] {
+  const last = new Map(previous.map((t) => [t.id, t]));
+  return theories.map((t) => {
+    const p = last.get(t.id);
+    return { ...t, before: p ? { status: p.status, confidence: p.confidence } : null };
+  });
 }
 
 /** Re-judges theories on the results (the app shows verdicts that are always up to date). */
@@ -193,6 +207,7 @@ export function historyText(h: {
   plans: { date: string; data: PlanData }[];
   events: ExperimentEvent[];
   previous: StoredShift | null;
+  tapers?: Taper[];
 }): string {
   const p = h.profile;
   const out: string[] = [];
@@ -201,6 +216,9 @@ export function historyText(h: {
   out.push(`strategy: ${strategyForPrompt(h.strategy)}`);
   out.push('# Nights (phone down / picked up; phone use, not sleep)');
   for (const n of h.nights) out.push(`${n.night}: ${n.down} / ${n.up ?? '?'}`);
+  out.push('# Step-down targets per app (code moves them; the person is cutting down, not quitting)');
+  if (!h.tapers?.length) out.push('none yet');
+  for (const t of h.tapers ?? []) out.push(`${t.app}: typical ${t.baseline} min/day -> today ${t.target}, goal ${t.goal}; last days ${t.recent.map((r) => `${r.day} ${r.met ? 'met' : 'missed'}`).join(', ') || '-'}; trade: ${t.trade ?? '-'}`);
   out.push('# Plans');
   for (const pl of h.plans) out.push(`${pl.date}: ${pl.data.tasks.map((t) => `${t.start_time ?? '--:--'} ${t.title} (${t.minutes} min)`).join('; ') || 'no tasks'}`);
   out.push(`# Every nudge, oldest first (${h.events.length}): day time band day_type app trigger depth task_soon angle style tone topic "words" -> what they did`);
@@ -297,7 +315,8 @@ export async function runCritic(shift: Shift, profile: Profile, deps: NightDeps)
   const left = angles.reduce((n, a) => n + a.lines.length, 0);
   const removed = shift.angles.reduce((n, a) => n + a.lines.length, 0) - left;
   if (left < 3) return { ...shift, critic: { cut: 0, reasons: ['kept the draft: cutting would leave too few lines'] } };
-  return { ...shift, angles, critic: { cut: removed, reasons: [...new Set(cut.values())].filter(Boolean).slice(0, 5) } };
+  const lines = shift.angles.flatMap((a) => a.lines).filter((l) => cut.has(l.id)).slice(0, 8).map((l) => ({ text: l.text, why: cut.get(l.id) ?? '' }));
+  return { ...shift, angles, critic: { cut: removed, reasons: [...new Set(cut.values())].filter(Boolean).slice(0, 5), lines } };
 }
 
 /** The lines already sent or already in the last bank, normalised, so tomorrow never repeats one. */

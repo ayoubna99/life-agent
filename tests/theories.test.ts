@@ -69,3 +69,13 @@ test('starting assumptions are small and favour concrete, blunt lines over quest
   assert.equal(STARTING_BELIEFS.strength, 3);
   assert.equal(startingBelief(undefined, undefined), 0.28);
 });
+
+test('each theory shows how its verdict moved since last night; new ones are marked new', async () => {
+  const { withBefore } = await import('../supabase/functions/_shared/nightshift.ts');
+  const base = { statement: 's', angle: null, when: {}, test: { tone: 'blunt' as const }, evidence: '', matching: { tried: 0, left: 0 }, others: { tried: 0, left: 0 }, model_said: null };
+  const tonight = [{ ...base, id: 'a', status: 'kept' as const, confidence: 0.93 }, { ...base, id: 'b', status: 'testing' as const, confidence: 0.5 }];
+  const last = [{ ...base, id: 'a', status: 'testing' as const, confidence: 0.54 }];
+  const out = withBefore(tonight, last);
+  assert.deepEqual(out[0].before, { status: 'testing', confidence: 0.54 });
+  assert.equal(out[1].before, null);
+});

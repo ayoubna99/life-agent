@@ -3,6 +3,7 @@
 
 import type { ChatMessage } from './muse.ts';
 import type { StoredShift } from './nightshift.ts';
+import type { Taper } from './taper.ts';
 import type { PlanData } from './plan.ts';
 import { toHHMM, toMinutes } from './profile.ts';
 import type { Profile } from './profile.ts';
@@ -75,6 +76,9 @@ export interface Store {
   /** The night shift for `day`, or the newest one when `day` is omitted. */
   getNightShift(day?: string): Promise<StoredShift | null>;
   saveNightShift(s: StoredShift): Promise<void>;
+  /** Step-down targets, one per app. */
+  getTapers(): Promise<Taper[]>;
+  saveTaper(t: Taper): Promise<void>;
 }
 
 export interface NewDocument {
@@ -426,6 +430,19 @@ export class RestStore implements Store {
     const where = day ? `day=eq.${encodeURIComponent(day)}&` : '';
     const rows = (await this.rest('night_shift', `night_shifts?${where}select=day,status,shift,model,updated_at&order=day.desc&limit=1`)) as StoredShift[];
     return rows[0] ?? null;
+  }
+
+  async getTapers(): Promise<Taper[]> {
+    const rows = (await this.rest('taper', 'tapers?select=state&order=app.asc&limit=20')) as { state: Taper }[];
+    return rows.map((r) => r.state);
+  }
+
+  async saveTaper(t: Taper): Promise<void> {
+    await this.rest('taper', 'tapers?on_conflict=user_id,app', {
+      method: 'POST',
+      json: { user_id: this.c.userId, app: t.app, state: t, updated_at: new Date().toISOString() },
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    });
   }
 
   async saveNightShift(s: StoredShift): Promise<void> {

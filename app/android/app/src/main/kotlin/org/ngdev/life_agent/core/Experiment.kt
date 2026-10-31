@@ -163,6 +163,39 @@ object OutcomeMeter {
         return Outcome(left, (total / 1000).toInt().coerceIn(0, (windowMs / 1000).toInt()))
     }
 
+    /** A break shorter than this (the screen went off, a quick look at a message) does not end a session. */
+    const val SESSION_GAP_MS = 3L * 60 * 1000
+
+    /**
+     * When the session on [pkg] that is still going on started, counting short breaks (up to [SESSION_GAP_MS]: the
+     * screen went off, a quick reply in another app) as part of it. Null if [pkg] is not in front. This is what "an hour
+     * straight on TikTok" means to a person; [frontSince] alone restarts at every screen-off.
+     */
+    fun sessionSince(events: List<UsageEvent>, pkg: String, gapMs: Long = SESSION_GAP_MS): Long? {
+        var start: Long? = null // start of the merged session
+        var leftAt: Long? = null // when pkg last left the front
+        var inFront = false
+        for (e in events.sortedBy { it.timeMs }) {
+            when (e.type) {
+                UsageEventType.FOREGROUND -> if (e.pkg == pkg) {
+                    if (!inFront) {
+                        if (start == null || leftAt == null || e.timeMs - leftAt!! > gapMs) start = e.timeMs
+                        inFront = true
+                    }
+                } else if (inFront) {
+                    inFront = false
+                    leftAt = e.timeMs
+                }
+                UsageEventType.BACKGROUND -> if (e.pkg == pkg && inFront) {
+                    inFront = false
+                    leftAt = e.timeMs
+                }
+                else -> Unit
+            }
+        }
+        return if (inFront) start else null
+    }
+
     /** When [pkg] came to the front for the session that is still going on, or null if it is not in front. */
     fun frontSince(events: List<UsageEvent>, pkg: String): Long? {
         var since: Long? = null

@@ -634,7 +634,15 @@ class Theory {
     this.angle,
     this.modelStatus,
     this.modelConfidence,
+    this.beforeStatus,
+    this.beforeConfidence,
+    this.isNew = false,
   });
+
+  /// Last night's verdict on the same theory, or [isNew] when it was proposed tonight.
+  final String? beforeStatus;
+  final double? beforeConfidence;
+  final bool isNew;
 
   final String statement;
 
@@ -659,6 +667,10 @@ class Theory {
     modelStatus: (j['model_said'] as Map?)?['status'] as String?,
     modelConfidence: ((j['model_said'] as Map?)?['confidence'] as num?)
         ?.toDouble(),
+    beforeStatus: (j['before'] as Map?)?['status'] as String?,
+    beforeConfidence: ((j['before'] as Map?)?['confidence'] as num?)
+        ?.toDouble(),
+    isNew: j.containsKey('before') && j['before'] == null,
   );
 }
 
@@ -691,7 +703,19 @@ class NightShift {
     this.cut = 0,
     this.raw,
     this.assumptions = const [],
+    this.writtenAt,
+    this.readNudges,
+    this.readNights,
+    this.cutLines = const [],
   });
+
+  /// When the night shift wrote it, and what it read in its one request.
+  final DateTime? writtenAt;
+  final int? readNudges;
+  final int? readNights;
+
+  /// Lines the critic threw out, with its reason.
+  final List<(String, String)> cutLines;
 
   /// What Lify assumes about most people before it has your results (starting assumptions, not facts).
   final List<String> assumptions;
@@ -751,6 +775,64 @@ class NightShift {
       assumptions: [
         for (final w in ((beliefs as Map?)?['why'] as List? ?? const [])) '$w',
       ],
+      writtenAt: DateTime.tryParse(s['updated_at'] as String? ?? '')?.toLocal(),
+      readNudges: ((shift['read'] as Map?)?['nudges'] as num?)?.toInt(),
+      readNights: ((shift['read'] as Map?)?['nights'] as num?)?.toInt(),
+      cutLines: [
+        for (final l
+            in ((shift['critic'] as Map?)?['lines'] as List? ?? const []))
+          if (l is Map) ('${l['text']}', '${l['why'] ?? ''}'),
+      ],
     );
   }
+}
+
+/// A step-down path for one app (the changing-criterion method): code moves the target, Muse Spark Open writes the
+/// trade for the minutes won back.
+class TaperView {
+  const TaperView({
+    required this.app,
+    required this.baseline,
+    required this.goal,
+    required this.target,
+    required this.path,
+    this.met = 0,
+    this.days = 0,
+    this.trade,
+  });
+
+  final String app;
+  final int baseline;
+  final int goal;
+  final int target;
+  final List<int> path; // targets so far, oldest first
+  final int met; // days met at the current target (of [days])
+  final int days;
+  final String? trade;
+
+  factory TaperView.fromJson(Map<String, Object?> j) {
+    final recent = [
+      for (final r in (j['recent'] as List? ?? const [])) r as Map,
+    ];
+    return TaperView(
+      app: j['app'] as String,
+      baseline: (j['baseline'] as num).toInt(),
+      goal: (j['goal'] as num).toInt(),
+      target: (j['target'] as num).toInt(),
+      path: [
+        for (final p in (j['path'] as List? ?? const []))
+          ((p as Map)['target'] as num).toInt(),
+      ],
+      met: recent.where((r) => r['met'] == true).length,
+      days: recent.length,
+      trade: j['trade'] as String?,
+    );
+  }
+}
+
+/// "3 h", "2 h 10", "45 min"
+String minutesText(int m) {
+  final h = m ~/ 60;
+  final r = m % 60;
+  return h == 0 ? '$r min' : (r == 0 ? '$h h' : '$h h $r');
 }

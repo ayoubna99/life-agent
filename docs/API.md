@@ -191,6 +191,15 @@ Experiments now also take `angle`, `line_id` and `pulled` ("Pull me out" tapped)
 
 `schedule_alarm` is now available in every mode and takes `date: "today" | "tomorrow"`.
 
+## action: "taper"  (step-down targets)
+
+`{"action":"taper","today":"2026-11-01"}` -> `{"tapers":[{app, baseline, goal, target, recent:[{day,met}], path:[{day,target}],
+judged, trade, stepped}]}`. For each app in the profile, code applies the changing-criterion rule (taper.ts): it starts
+from the median of the last 7 days (3+ days of data), targets about 15% less, steps down after the target is met on 2 of
+the last 3 days, never goes up, and stops at the goal (default 30 min). When a target is new, Muse Spark Open writes the
+`trade` (what to do with the minutes won back). Live nudges get `todays_target_minutes` and the trade. Migration
+`20261105000013_tapers.sql`.
+
 ## action: "speak"  (Lify's voice)
 
 `{"action":"speak","text":"Jake, forty minutes on TikTok <chuckle>"}` -> `{"audio":"<base64 WAV, 24 kHz mono>","format":"wav","voice":"tara"}`.

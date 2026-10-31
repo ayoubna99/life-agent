@@ -109,7 +109,9 @@ test('the night shift: the study reads the whole history and thinks harder, the 
   const final = (await (await critic.res).json()).shift;
   assert.equal(final.status, 'final');
   assert.equal(JSON.parse(critic.calls[0].init.body as string).reasoning_effort, 'low');
-  assert.deepEqual(final.shift.critic, { cut: 1, reasons: ['sounds like a poster'] });
+  assert.deepEqual(final.shift.critic, { cut: 1, reasons: ['sounds like a poster'], lines: [{ text: 'Tomorrow-you wants that 6 AM gym. Close it.', why: 'sounds like a poster' }] });
+  assert.deepEqual(final.shift.read, { nudges: 3, nights: 1, plans: 0, days: 30 });
+  assert.equal(final.shift.theories[0].before, null, 'the first night: every theory is new');
   assert.deepEqual(final.shift.angles.flatMap((a: { lines: { text: string }[] }) => a.lines.map((l) => l.text)), [
     'Gym at 6. TikTok will still be here.',
     'One page of the thesis. I dare you.',

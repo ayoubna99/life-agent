@@ -54,6 +54,7 @@ off the phone and onto what you said matters.
 ## 🎬 Demo
 
 > **[▶ Watch the 3-minute demo](DEMO_URL)** · **[⬇ Download the APK](https://github.com/ayoubna99/life-agent/releases/latest)**
+> (Android 10+; install it, then follow [How judges can verify](#-how-judges-can-verify))
 
 <p align="center">
   <img src="docs/media/card.png" width="230" alt="A nudge card over TikTok with the Pull me out button" />
@@ -76,7 +77,7 @@ to end on a real device; it is not a study of whether Life changes anyone's habi
 | What | Result |
 |---|---|
 | Nudges shown and measured by the phone (outside demo mode) | **39**: each one logged with its moment, its words and what happened next |
-| Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events, not by the model |
+| Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events, not by the model. There is no control group yet, so this is not an effect size; the off-policy lift (Technical depth, 4) needs more data before it means anything. |
 | Night shift, end to end | Muse Spark Open read the history, wrote theories and the nudge bank, and the critic finished **41 s** after the draft was saved |
 | The bank in use | Ideas from the night shift were shown and scored (in demo mode): the "night TikTok wind-down" idea got the user to leave **2 of 3** times |
 
@@ -114,8 +115,10 @@ night, and **the AI is not allowed to grade its own homework**: it proposes theo
                                                  ▼  results go back up, and the next night checks the theories
 ```
 
-In the app, **"Lify's theories about you"** shows every theory with the probability **code** computed and the counts
-behind it ("Checked on your data: left 5/7 with it vs 1/6 without (TikTok, at night)"). When the data disagrees with
+In the app, **"Lify's theories about you"** says when it was written and what it read ("written at 22:48 by Muse Spark
+Open after reading 39 nudges and 7 nights in one request"), shows how each theory moved since last night ("testing 54% →
+kept 93%", or "new tonight"), and lists the lines the critic threw out, crossed out, with its reason. Every theory shows
+the probability **code** computed and the counts behind it ("Checked on your data: left 5/7 with it vs 1/6 without (TikTok, at night)"). When the data disagrees with
 the model, it says so: *Lify guessed "kept"; your results say "rejected"*. You also see tomorrow's ideas with "you left 4
 of 6 times", Lify's **starting assumptions** about most people, and **"How Lify thought about it"**: an excerpt of the
 open model's own visible reasoning.
@@ -140,6 +143,13 @@ Code: [`nightshift.ts`](supabase/functions/_shared/nightshift.ts) · [`theories.
 ## 🏆 How Life meets the judging criteria
 
 ### Impact (30%)
+- **Less, one step at a time, using a known method.** Life uses the **changing-criterion** method from behaviour therapy
+  (shaping). It starts from your *typical* day (the median of the last 7, not your worst), sets a target about 15% lower,
+  and steps down again only after you hit it on 2 of the last 3 days. A missed day never raises it, and it stops at your
+  own goal: the aim is less, not zero. Code moves every number. When a target drops, **Muse Spark Open** writes what to do
+  with the minutes you won back, from your own plan ("25 minutes back: two pages of your thesis at 22:15"). That is an
+  implementation intention, and the nudge at the target uses it. Home shows it as **Your path**:
+  *TikTok: 3 h → 2 h 35 → today 2 h 10 · goal 30 min*.
 - **The problem everyone has:** hours a day lost to scrolling, and the knowledge that it's happening doesn't stop it.
   Screen-time apps show charts or block apps; people ignore the charts and switch the blocker off.
 - **Life doesn't block, it persuades, and it measures whether the persuasion worked.** You can always keep scrolling;
@@ -158,7 +168,16 @@ Two Meta models, each used for what it is uniquely good at:
 | **Muse Spark Open** | **The night shift** (theories + nudge bank + critic), live nudges, the evening "let's plan tomorrow" notification | **1M-token context:** reads your whole history at once instead of retrieval. **Controllable reasoning:** thinks hard at night (`medium`), almost not at all for live nudges (`low`). **Visible reasoning:** shown in the app as "how Lify thought about it". **Open weights:** the same pipeline can be self-hosted so your history never leaves your servers. |
 
 - Each model is the other's fallback, so a nudge still arrives if one is down.
-- Muse Voice Transcribe turns what you say into text; Muse Spark reads photos and scanned PDFs; Muse Image makes pictures.
+
+**Talk to Lify any way you like, and get back what you need:**
+
+| You send | What reads it | Lify sends back | What makes it |
+|---|---|---|---|
+| Text | Muse Spark | A plan, tasks, alarms, app limits, your own rules | Muse Spark (tool calls) |
+| Your voice | **Muse Voice Transcribe** | Spoken answers | the phone's voice |
+| A PDF (a CV, a course, an article) | Text PDFs read on the server; scanned ones by **Muse Spark** (vision) | A real **PDF** (a study sheet, a cover letter) | Muse Spark writes it, the server lays it out |
+| A photo (timetable, whiteboard, notes) | **Muse Spark** (vision) | A **picture** (a card for your day) | **Muse Image** |
+| A link, or "find me…" | the server reads the page; **Muse Spark web search** with sources | Links in the task, checked before they're saved | Muse Spark |
 - Code: [`muse.ts`](supabase/functions/_shared/muse.ts) (routing, failover, reasoning effort),
   [`nudge.ts`](supabase/functions/_shared/nudge.ts), [`evening.ts`](supabase/functions/_shared/evening.ts).
 
@@ -178,51 +197,57 @@ The model writes; **code decides and measures**. Nothing below can be changed by
 5. **Strategy memory:** each evening review writes a new strategy version. The server refuses any change that doesn't
    cite a number, and every version is kept (day 1 vs. today).
 6. **Real Android engineering:**
-    - a foreground watcher reading `UsageStatsManager` events;
-    - a custom overlay card with a "Pull me out" button. On phones that hide overlays it falls back to a heads-up notification automatically;
-    - a watchdog alarm that restarts the watcher if the phone kills it;
-    - exact alarms and real Clock-app alarms;
-    - phone-down detection from unlock events, which ignores notification wake-ups, alarms and calls.
+   - a foreground watcher reading `UsageStatsManager` events;
+   - a custom overlay card with a "Pull me out" button. On phones that hide overlays it falls back to a heads-up notification automatically;
+   - a watchdog alarm that restarts the watcher if the phone kills it;
+   - exact alarms and real Clock-app alarms;
+   - phone-down detection from unlock events, which ignores notification wake-ups, alarms and calls.
 7. **Production basics:**
-    - anonymous auth with row-level security on every table;
-    - per-user and global daily caps;
-    - keys only in server secrets;
-    - every link checked before it is saved;
-    - 402 automated tests.
+   - anonymous auth with row-level security on every table;
+   - per-user and global daily caps;
+   - keys only in server secrets;
+   - every link checked before it is saved;
+   - 409 automated tests.
+8. **Open source:** [MIT license](LICENSE).
 
 Code: [`Experiment.kt`](app/android/app/src/main/kotlin/org/ngdev/life_agent/core/Experiment.kt) ·
 [`experiments.ts`](supabase/functions/_shared/experiments.ts) · [`strategy.ts`](supabase/functions/_shared/strategy.ts) ·
 [`Nights.kt`](app/android/app/src/main/kotlin/org/ngdev/life_agent/core/Nights.kt)
 
 ### Demo (25%)
-The [demo](#-demo) follows one evening:
-- doomscrolling at night;
-- the "Hey Jake, let's plan tomorrow" notification;
-- planning tomorrow by voice;
-- a nudge card pulling him out;
-- the lab notebook and Lify's theories updating from his own results.
+The [demo](#-demo) opens with Jake showing the problem: scrolling at night and the "let's plan tomorrow" notification.
+Then it's the real app on a real phone:
+- planning tomorrow by voice, with a PDF in and a PDF out;
+- a nudge card sliding over TikTok, and **Pull me out**;
+- Your path (the step-down targets);
+- the night shift, and Lify's theories checked by code.
 
 ---
 
-## 🔬 Why nudges can work
+## 🔬 Why nudges can work, and why Life tests them on you
 
-Life is built on findings from behaviour research, not on the idea that an AI message is enough by itself:
+Pop-ups and limits measurably reduce phone use. But nudge effects vary a lot between people, so Lify doesn't assume
+any nudge works: it tests them on you, the way researchers do in micro-randomized trials.
 
-- **A pause before scrolling cuts use.** In a field study of the one sec app, a short delay before opening a social
-  media app reduced how often people opened it (Grüning, Riedel & Lorenz-Spreen, *PNAS*, 2023). Life's card is that
-  pause, at the moment it matters, with a way out.
-- **Much social media use is more than people want.** People spent more time on social media than they themselves
-  said they wanted, and tools that helped them limit it reduced use (Allcott, Gentzkow & Song, *American Economic
-  Review*, 2022). Life helps with exactly that gap.
-- **"When X, I will do Y" plans work.** Implementation intentions have a medium-to-large effect on reaching goals
-  (Gollwitzer & Sheeran, *Advances in Experimental Social Psychology*, 2006). Lify's evening planning and your own rules
-  ("whenever I'm 30 minutes on an app, pull me out") are implementation intentions.
-- **Timing and personalisation matter.** Just-in-time adaptive interventions send support at the moment of need and
-  adapt to the person (Nahum-Shani et al., *Annals of Behavioral Medicine*, 2018). HeartSteps tested this kind of
-  in-the-moment message with micro-randomised trials (Klasnja et al., 2019). Life's watcher, its Thompson sampling and
-  its logged chances of each choice follow the same design.
-- **What Life does not claim:** it gives no health advice and makes no sleep or mental-health claims, and its own
-  numbers are from one person. They are shown as an early signal, with sample sizes.
+- **Pop-ups reduce app use.** In a 6-week field study with 280 people, a pop-up before a chosen app
+  made people close it 36% of the time, and actual openings fell 57%
+  ([Grüning et al., PNAS 2023](https://doi.org/10.1073/pnas.2213114120)). The easy exit was the
+  strongest ingredient, not the message. That's why Life's card leads with one tap: **Pull me out**.
+- **People want limits.** When about 2,000 Android users were offered a tool to set their own app limits,
+  89% used it and their social media time fell 17%
+  ([Allcott, Gentzkow & Song, AER 2022](https://doi.org/10.1257/aer.20210867)).
+- **Just-in-time suggestions work, then fade.** In the HeartSteps micro-randomized trial, walking
+  suggestions raised the next 30 minutes' steps, but the effect shrank over the weeks
+  ([Klasnja et al., 2019](https://pmc.ncbi.nlm.nih.gov/articles/PMC6401341/)). Life uses the same
+  design (randomize at each moment, measure the next minutes) and keeps the wording fresh.
+- **Nudge effects vary a lot between people.** Across 200+ studies the average effect is small to medium,
+  and much smaller after correcting for publication bias
+  ([Mertens et al., PNAS 2022](https://doi.org/10.1073/pnas.2107346118);
+  [Maier et al., PNAS 2022](https://doi.org/10.1073/pnas.2200300119)).
+  So Life doesn't assume any nudge works. It measures what works for each person.
+
+*These studies support the approach, not Life's exact numbers: one sec steps in when you open an app,
+Life steps in after you've been in it for a while.*
 
 ---
 
@@ -245,7 +270,10 @@ Life is built on findings from behaviour research, not on the idea that an AI me
 - **Picks the right alarm per task:** a real Clock alarm for things away from the screen (gym, prayer, leaving home),
   or an in-app alarm that opens the task's own screen with everything ready (links, PDFs, pictures, steps, chat notes).
 - **Makes what you need:** study sheets as real PDFs and pictures. It reads web pages, PDFs and photos you send, and searches the web with sources.
-- **Your own rules:** "whenever I'm on any app for 30 minutes straight, pull me out" becomes a rule on the phone.
+- **Your own rules:** "whenever I'm on any app for 30 minutes straight, pull me out" becomes a rule on the phone. Short
+  breaks (the screen going off, a quick reply) don't reset the count.
+- **Step-down targets:** each distracting app's daily target goes down one earned step at a time (see Impact), with
+  Muse Spark Open's trade for the minutes you win back.
 - **Knows your nights:** when the phone went quiet and was picked up again, measured from unlock events.
   "Phone down at 03:30 last night. Tonight?"
 - **Learns:** the night shift, the lab notebook (every nudge, why it was picked, what you did next), and the strategy
@@ -276,9 +304,9 @@ Life is built on findings from behaviour research, not on the idea that an AI me
 ```
 
 - **Three agent modes, one agent:**
-    - **planning** (evening): asks until it has everything, then saves the plan;
-    - **execute** (morning): sets up the day on the phone through device tool calls;
-    - **review** (evening): compares the plan with real usage and updates the strategy.
+  - **planning** (evening): asks until it has everything, then saves the plan;
+  - **execute** (morning): sets up the day on the phone through device tool calls;
+  - **review** (evening): compares the plan with real usage and updates the strategy.
 - **The server remembers the conversation;** the phone sends only new messages and tool results.
 - **API reference:** [docs/API.md](docs/API.md).
 
@@ -337,9 +365,8 @@ The judging build uses a shared demo backend with a daily cap per user, so a jud
 
 ## 🔑 Validate with your own Meta key
 
-The hackathon's Muse Spark credits end on 5 November 2026. After that, the shared demo backend runs on **Muse Spark
-Open** only (planning chats with tools, nudges, the night shift and theories keep working). To test everything with
-your own Meta key, run your own copy. No code changes: every key is a server secret.
+The APK above runs on the shared demo backend. To test with your own Meta key instead, run your own copy. No code
+changes: every key is a server secret.
 
 **1. Backend (about 10 minutes)**: a free Supabase project, Node 22.6+:
 ```
@@ -404,16 +431,17 @@ Install `app/build/app/outputs/flutter-apk/app-release.apk` and follow the steps
 ## 📊 Status
 
 - **Tested end to end on a real Android phone (Samsung):**
-    - planning chats with live Muse Spark tool calls;
-    - Muse Spark Open on Baseten;
-    - the night shift and the nudge bank;
-    - the nudge cards and "Pull me out";
-    - screen time and phone-down nights;
-    - the evening notification;
-    - alarms and calendar;
-    - voice;
-    - Check Lify.
-- **Automated tests:** 402 in all: 189 backend, 148 Flutter, 65 Kotlin (JVM). The Android code compiles against the real Android 15 classes.
+  - planning chats with live Muse Spark tool calls;
+  - Muse Spark Open on Baseten;
+  - the night shift and the nudge bank;
+  - the nudge cards and "Pull me out";
+  - screen time and phone-down nights;
+  - the evening notification;
+  - alarms and calendar;
+  - voice;
+  - Check Lify.
+- **License:** [MIT](LICENSE).
+- **Automated tests:** 409 in all: 193 backend, 150 Flutter, 66 Kotlin (JVM). The Android code compiles against the real Android 15 classes.
 - **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes. One person over a few
   days is not proof, and Life says so.
 
@@ -431,5 +459,6 @@ display and app limits with generic notifications. It had **no AI agent and no A
 - everything that makes Life what it is: the agent Lify, the night shift, the theories checked by code, the
   experiments with Thompson sampling, the off-policy evaluation, the personal nudge cards and the phone-down nights.
 
-This repository starts at the tag [`hackathon-start`](https://github.com/ayoubna99/life-agent/releases/tag/hackathon-start),
-its first commit.
+This repository starts at the tag [`hackathon-start`](https://github.com/ayoubna99/life-agent/tree/hackathon-start),
+its first commit (26 Oct 2026). I worked locally and pushed in large batches, so each commit holds a lot of work; the
+commit dates, the [day-by-day migrations](supabase/migrations) and the tests show how it was built.

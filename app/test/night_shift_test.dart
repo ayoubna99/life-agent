@@ -224,4 +224,82 @@ void main() {
     expect(find.byKey(const Key('task-title')), findsOneWidget);
     expect(find.text('Thesis chapter 2'), findsWidgets);
   });
+
+  testWidgets(
+    'your path: from the typical day down to today, the days hit, and the trade',
+    (t) async {
+      final p = TaperView.fromJson({
+        'app': 'TikTok',
+        'baseline': 180,
+        'goal': 30,
+        'target': 130,
+        'path': [
+          {'day': '2026-11-01', 'target': 155},
+          {'day': '2026-11-04', 'target': 130},
+        ],
+        'recent': [
+          {'day': '2026-11-04', 'met': true},
+        ],
+        'trade': '25 minutes back: two pages of your thesis at 22:15.',
+      });
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: TaperCard(tapers: [p])),
+        ),
+      );
+      expect(
+        find.text('3 h → 2 h 35 → today 2 h 10 · goal 30 min'),
+        findsOneWidget,
+      );
+      expect(find.text('Hit 1 of the last 1 days'), findsOneWidget);
+      expect(
+        find.text('25 minutes back: two pages of your thesis at 22:15.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  test(
+    'theories carry last night\'s verdict, and the shift says what it read and what the critic cut',
+    () {
+      final s = NightShift.fromJson({
+        'day': '2026-11-02',
+        'status': 'final',
+        'updated_at': '2026-11-01T22:49:28Z',
+        'shift': {
+          'theories': [
+            {
+              'statement': 'a',
+              'status': 'kept',
+              'confidence': 0.93,
+              'evidence': '',
+              'before': {'status': 'testing', 'confidence': 0.54},
+            },
+            {
+              'statement': 'b',
+              'status': 'testing',
+              'confidence': 0.5,
+              'evidence': '',
+              'before': null,
+            },
+          ],
+          'angles': <Object?>[],
+          'read': {'nudges': 39, 'nights': 7},
+          'critic': {
+            'cut': 1,
+            'reasons': ['generic'],
+            'lines': [
+              {'text': 'Take a break.', 'why': 'generic'},
+            ],
+          },
+        },
+      })!;
+      expect(s.theories[0].beforeConfidence, 0.54);
+      expect(s.theories[0].isNew, isFalse);
+      expect(s.theories[1].isNew, isTrue);
+      expect(s.readNudges, 39);
+      expect(s.cutLines.single.$1, 'Take a break.');
+      expect(s.writtenAt, isNotNull);
+    },
+  );
 }

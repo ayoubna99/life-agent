@@ -119,6 +119,15 @@ class AgentApi {
   }
 
   /// The experiment totals over the last [days] days.
+  /// Today's step-down targets for the apps that pull the user away (moved by code on the server).
+  Future<List<TaperView>> tapers(String today) async {
+    final json = await _agent({'action': 'taper', 'today': today});
+    return [
+      for (final t in (json['tapers'] as List? ?? const []))
+        TaperView.fromJson(Map<String, Object?>.from(t as Map)),
+    ];
+  }
+
   /// The night shift: "get" the newest one, or run "study" then "critic" for [day] ([test] skips the 6 hour wait).
   Future<NightShift?> nightShift({
     String step = 'get',

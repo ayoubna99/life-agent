@@ -138,7 +138,8 @@ export async function runNudge(
   deps: { cfg: MuseConfig; models?: MuseConfig[]; store: Store; dailyLimit: number; globalLimit: number; fetchImpl?: typeof fetch },
 ): Promise<{ text: string; task: string | null; style: NudgeStyle; model: ModelLabel }> {
   await spendQuota(deps.store, deps);
-  const [plan, profile] = await Promise.all([deps.store.getPlan(req.today), deps.store.getProfile()]);
+  const [plan, profile, tapers] = await Promise.all([deps.store.getPlan(req.today), deps.store.getProfile(), deps.store.getTapers()]);
+  const taper = tapers.find((t) => t.app.toLowerCase() === req.app.toLowerCase());
   // a small chore ("drink water") is no reason to leave an app: the next task that matters, if there is one
   const tasks = plan?.data.tasks ?? [];
   const meaningful = tasks.filter((t) => t.minutes >= 15);
@@ -156,6 +157,11 @@ export async function runNudge(
   if (req.session_minutes !== undefined) facts.push(`session_minutes: ${req.session_minutes}`);
   if (req.locale) facts.push(`user_language: ${req.locale}`);
   if (req.recent.length) facts.push(`recent_nudges: ${JSON.stringify(req.recent)}`);
+  if (taper) {
+    // the step-down path: today's target, where they started, and what they said they'd do with the minutes won back
+    facts.push(`todays_target_minutes: ${taper.target} (they started at ${taper.baseline} a day; their goal is ${taper.goal})`);
+    if (taper.trade) facts.push(`their_trade_for_the_minutes_won_back: ${JSON.stringify(taper.trade)}`);
+  }
   if (profile.sleep) {
     const left = (toMinutes(profile.sleep) - toMinutes(req.now) + 1440) % 1440;
     facts.push(`known_sleep: ${profile.sleep}`, `minutes_until_sleep: ${left}`);

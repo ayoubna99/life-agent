@@ -16,8 +16,9 @@ import { parseExperimentLog, summarizeExperiments } from './experiments.ts';
 import { parseNights } from './nights.ts';
 import { parseEveningRequest, runEvening } from './evening.ts';
 import { speakableText, synthesize, toBase64, ttsConfigFromEnv } from './tts.ts';
-import { historyText, judgeTheories, NIGHT, runCritic, runStudy, usedLines, type StoredShift } from './nightshift.ts';
+import { historyText, judgeTheories, withBefore, NIGHT, runCritic, runStudy, usedLines, type StoredShift } from './nightshift.ts';
 import { STARTING_BELIEFS } from './theories.ts';
+import { advanceTaper, writeTrade } from './taper.ts';
 import { angleResults } from './experiments.ts';
 import { RestStore, StoreError } from './store.ts';
 import type { Store, UsageRow } from './store.ts';
@@ -161,8 +162,12 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
             if (p) plans.push({ date: d, data: p.data });
           }
           const recent = events.slice(-NIGHT.maxEvents);
-          const history = historyText({ profile, strategy, nights, plans, events: recent, previous });
+          const history = historyText({ profile, strategy, nights, plans, events: recent, previous, tapers: await store.getTapers() });
           const { shift, model } = await runStudy(history, day, usedLines(recent, previous), profile.name, deps, recent);
+          // what changed since last night (verdicts on the data the previous shift had), and how much was read
+          const lastNight = previous ? judgeTheories(previous.shift.theories.filter((t) => t.when && t.test), recent.filter((e) => !previous.updated_at || e.day < previous.day)) : [];
+          shift.theories = withBefore(shift.theories, lastNight);
+          shift.read = { nudges: recent.length, nights: nights.length, plans: plans.length, days: NIGHT.historyDays };
           const stored: StoredShift = { day, status: 'draft', shift, model };
           await store.saveNightShift(stored);
           return json({ shift: stored });
@@ -184,6 +189,30 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
           return json({ shift: stored });
         }
         throw new BadRequest('bad_step');
+      }
+      case 'taper': {
+        // Step-down targets for the apps that pull the user away (see taper.ts). Code moves the targets; Muse Spark Open
+        // writes the trade for the minutes won back when a target goes down.
+        if (!isDate(body.today)) throw new BadRequest('bad_date');
+        const today = body.today;
+        const profile = await store.getProfile();
+        const saved = new Map((await store.getTapers()).map((t) => [t.app.toLowerCase(), t]));
+        const out = [];
+        let plan: PlanData | null | undefined;
+        for (const app of profile.apps.slice(0, 8)) {
+          const usage = await store.getUsage(app, addDays(today, -21));
+          const r = advanceTaper(saved.get(app.toLowerCase()) ?? null, app, usage, today);
+          if (!r) continue;
+          let taper = r.taper;
+          if (!taper.trade) {
+            if (plan === undefined) plan = (await store.getPlan(today))?.data ?? null;
+            const trade = await writeTrade(taper, profile, plan, modelsFor('evening', (n) => env.get(n)), env.fetchImpl ?? fetch);
+            taper = { ...taper, trade };
+          }
+          await store.saveTaper(taper);
+          out.push({ ...taper, stepped: r.stepped });
+        }
+        return json({ tapers: out });
       }
       case 'speak': {
         // Lify's voice (Orpheus on Baseten). Not configured: the phone uses its own voice, no error worth showing.

@@ -177,4 +177,17 @@ class ExperimentTest {
         assertEquals("1 h 20 min on TikTok", NudgeTitle.onApp(80, "TikTok"))
         assertEquals("45 min on TikTok", NudgeTitle.onApp(45, "TikTok"))
     }
+
+    @Test fun aSessionSurvivesShortBreaksButNotLongOnes() {
+        val m = 60_000L
+        fun fg(t: Long, p: String = "tiktok") = UsageEvent(t * m, p, UsageEventType.FOREGROUND)
+        fun bg(t: Long, p: String = "tiktok") = UsageEvent(t * m, p, UsageEventType.BACKGROUND)
+        // TikTok from minute 0; screen off at 20 for 2 minutes; a quick WhatsApp reply at 40; still on TikTok at 60
+        val events = listOf(fg(0), bg(20), fg(22), fg(40, "whatsapp"), bg(41, "whatsapp"), fg(41))
+        assertEquals(0L, OutcomeMeter.sessionSince(events, "tiktok"), "an hour straight, as a person would say it")
+        assertEquals(41 * m, OutcomeMeter.frontSince(events, "tiktok"), "the old count restarted at every break")
+        // a 10 minute break starts a new session
+        assertEquals(30 * m, OutcomeMeter.sessionSince(listOf(fg(0), bg(20), fg(30)), "tiktok"))
+        assertNull(OutcomeMeter.sessionSince(listOf(fg(0), bg(20)), "tiktok"), "not in front: no session")
+    }
 }

@@ -133,7 +133,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           _offline = null;
         });
       }
-      s.syncWatcher(distracting: profile.apps, sleep: profile.sleep);
+      s
+          .syncTapers()
+          .then(
+            (targets) => s.syncWatcher(
+              distracting: profile.apps,
+              sleep: profile.sleep,
+              targets: targets,
+            ),
+          )
+          .then((_) {
+            if (mounted) setState(() {});
+          });
       _openFromNotification();
     } catch (e) {
       if (mounted) {
@@ -380,6 +391,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           subtitle: 'Your tasks show up in the morning.',
         ),
       const _SectionTitle(title: 'Lify is learning'),
+      if (s.tapers.isNotEmpty) TaperCard(tapers: s.tapers),
       NightShiftCard(
         shift: _shift,
         onOpen: () => Navigator.of(context).push(

@@ -170,6 +170,20 @@ class AppServices {
     }
   }
 
+  List<TaperView> tapers = const [];
+
+  /// Uploads the latest screen time, then asks the server for today's step-down targets (it moves them by the
+  /// changing-criterion rule). Returns app -> today's target in minutes; the last known ones when offline.
+  Future<Map<String, int>> syncTapers() async {
+    try {
+      await usageSync.run(days: 8);
+      tapers = await api.tapers(isoDate(DateTime.now()));
+    } catch (_) {
+      // keep the last known targets
+    }
+    return {for (final t in tapers) t.app: t.target};
+  }
+
   DateTime? _shiftAt;
 
   /// The night shift: the newest one goes to the watcher; in the evening (20:00 to 04:00) without one for tomorrow,
@@ -437,6 +451,7 @@ class AppServices {
   Future<void> syncWatcher({
     List<String> distracting = const [],
     String? sleep,
+    Map<String, int> targets = const {},
   }) async {
     try {
       // the evening reminder rings one hour before the sleep time (none until a sleep time is set)
@@ -454,12 +469,23 @@ class AppServices {
       await native.applyRules(await rules.all());
       // No limits saved yet: the apps the user said pull them away are watched with 30 minutes a day, so nudges
       // work from day one (before, the watcher stayed off until "Start my day" set limits or demo mode was on).
+      // Today's step-down target replaces the fixed 30 minutes; a lower limit from today's plan still wins over it.
       final saved = await limits.all();
-      if (saved.isNotEmpty) {
-        await native.applyLimits(saved);
-      } else if (distracting.isNotEmpty) {
-        await native.applyLimits({for (final a in distracting) a: 30});
-      }
+      final apply = <String, int>{
+        if (saved.isEmpty)
+          for (final a in distracting) a: 30,
+        ...saved,
+      };
+      targets.forEach((app, target) {
+        final key = apply.keys
+            .where((k) => k.toLowerCase() == app.toLowerCase())
+            .firstOrNull;
+        final now = key == null ? null : apply[key];
+        apply[key ?? app] = now == null || saved.isEmpty
+            ? target
+            : (now < target ? now : target);
+      });
+      if (apply.isNotEmpty) await native.applyLimits(apply);
     } catch (_) {
       // The watcher is best effort; the screens still work.
     }

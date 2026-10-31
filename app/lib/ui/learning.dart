@@ -885,6 +885,17 @@ class _TheoryLine extends StatelessWidget {
             'Checked on your data: ${theory.evidence}',
             style: t.bodySmall?.copyWith(color: dark ? Brand.peach : null),
           ),
+        if (theory.isNew || theory.beforeStatus != null)
+          Text(
+            theory.isNew
+                ? 'New tonight'
+                : 'Since last night: ${theory.beforeStatus} ${((theory.beforeConfidence ?? 0) * 100).round()}% → '
+                      '${_statusLabel(theory.status)} ${(theory.confidence * 100).round()}%',
+            key: const Key('theory-moved'),
+            style: t.labelSmall?.copyWith(
+              color: dark ? Brand.peach : Brand.coral,
+            ),
+          ),
         if (theory.overruled)
           Text(
             'Lify guessed "${theory.modelStatus}"; your results say "${_statusLabel(theory.status)}".',
@@ -932,6 +943,20 @@ class NightShiftPage extends StatelessWidget {
               style: t.bodyMedium?.copyWith(color: Brand.peach),
             ),
           ),
+          if (s.writtenAt != null || s.readNudges != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              [
+                if (s.writtenAt != null)
+                  'Written ${s.writtenAt!.day}/${s.writtenAt!.month} at ${s.writtenAt!.hour.toString().padLeft(2, '0')}:${s.writtenAt!.minute.toString().padLeft(2, '0')} by Muse Spark Open',
+                if (s.readNudges != null)
+                  'after reading ${s.readNudges} nudges and ${s.readNights ?? 0} nights in one request',
+                'verdicts recomputed by code on every open',
+              ].join(', '),
+              key: const Key('night-provenance'),
+              style: t.bodySmall,
+            ),
+          ],
           if (s.notes.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(s.notes, key: const Key('night-notes'), style: t.bodyLarge),
@@ -979,6 +1004,31 @@ class NightShiftPage extends StatelessWidget {
                 ],
               ),
             ),
+          if (s.cutLines.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('Cut by your inner skeptic', style: t.headlineSmall),
+            Text(
+              'Lines the night shift wrote, then threw out before you could see them.',
+              style: t.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            for (final (line, why) in s.cutLines)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '"$line"',
+                      style: t.bodyMedium?.copyWith(
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                    if (why.isNotEmpty) Text(why, style: t.bodySmall),
+                  ],
+                ),
+              ),
+          ],
           if (s.assumptions.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text('Starting assumptions', style: t.headlineSmall),
@@ -1012,6 +1062,84 @@ class NightShiftPage extends StatelessWidget {
             ),
           ],
         ]),
+      ),
+    );
+  }
+}
+
+/// "Your path": each app's step-down targets, moved by code (the changing-criterion method), and what Muse Spark Open
+/// suggested doing with the minutes won back.
+class TaperCard extends StatelessWidget {
+  const TaperCard({super.key, required this.tapers});
+
+  final List<TaperView> tapers;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    return Container(
+      key: const Key('taper-card'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.trending_down_rounded, color: Brand.coral),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Your path', style: t.titleMedium)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Less, one step at a time: a step down only after you hit the target 2 of 3 days. A missed day never raises it.',
+            style: t.bodySmall,
+          ),
+          for (final p in tapers) ...[
+            const SizedBox(height: 14),
+            Text(p.app, style: t.titleSmall),
+            const SizedBox(height: 2),
+            Text(
+              [
+                minutesText(p.baseline),
+                for (final x in p.path.take(p.path.length - 1)) minutesText(x),
+                'today ${minutesText(p.target)} · goal ${minutesText(p.goal)}',
+              ].join(' → '),
+              key: Key('taper-${p.app}'),
+              style: t.bodyMedium,
+            ),
+            Text(
+              p.days == 0
+                  ? 'New target today'
+                  : 'Hit ${p.met} of the last ${p.days} days',
+              style: t.bodySmall,
+            ),
+            if (p.trade != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  decoration: BoxDecoration(
+                    color: Brand.dusk,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    p.trade!,
+                    style: t.bodyMedium?.copyWith(color: Brand.cream),
+                  ),
+                ),
+              ),
+          ],
+        ],
       ),
     );
   }

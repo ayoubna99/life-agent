@@ -149,7 +149,7 @@ class LimitWatcherService : Service() {
         val used = (usedMs / 60_000L).toInt()
 
         // 1. The user's own reminders ("whenever I am 30 minutes on an app, remind me to do 10 push-ups").
-        val since = OutcomeMeter.frontSince(events, front)
+        val since = OutcomeMeter.sessionSince(events, front)
         SessionRules.due(rules, front, since, now, day, sent.keys)?.let { (rule, key) ->
             store.saveSent(sent + (key to now)) // once per step, even if the agent cannot be reached
             val label = if (rule.pkg == SessionRules.ANY) appLabel(front) else rule.label
@@ -167,8 +167,9 @@ class LimitWatcherService : Service() {
             return 20_000L
         }
 
-        // 2. Daily limits. The user's own rule for this app (or for any app) replaces them: one voice, not two.
-        if (rules.any { it.pkg == front || it.pkg == SessionRules.ANY }) return idle
+        // 2. Daily limits. A rule the user made for THIS app replaces its limit nudges (one voice, not two). A rule for
+        // any app does not: it counts time in a row, and hours of short sessions would never get a nudge.
+        if (rules.any { it.pkg == front }) return idle
         val limit = limits.firstOrNull { it.pkg == front } ?: return idle
         val event = runCatching { DayRules.currentEvent(calendar.events(now - 12 * 3600_000L, now + 60_000L), now) }.getOrNull()
         val decision: NudgeDecision = when {
