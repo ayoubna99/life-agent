@@ -513,5 +513,4 @@ pick them yourself.
     - Check Lify.
 - **License:** [MIT](LICENSE).
 - **Automated tests:** 409 in all: 193 backend, 150 Flutter, 66 Kotlin (JVM). The Android code compiles against the real Android 15 classes.
-- **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes. One person over a few
-  days is not proof, and Life says so.
+- **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes.
