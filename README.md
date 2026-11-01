@@ -5,8 +5,10 @@
 <h1 align="center">Life</h1>
 
 <p align="center">
-  <b>An AI agent that pulls you out of doomscrolling, and learns from your results what works on you.</b><br/>
-  Powered by Meta's <b>Muse Spark</b> and <b>Muse Spark Open</b>.
+  <b>An autonomous, self-improving agent for your time.</b><br/>
+  <b>Life</b> is the app. <b>Lify</b> is the agent inside it: it plans your day with you, steps in when you're stuck
+  scrolling, and learns every night what works on you.<br/>
+  Powered by Meta's <b>Muse Spark</b>, <b>Muse Spark Open</b>, <b>Muse Image</b> and <b>Muse Voice Transcribe</b>.
 </p>
 
 <p align="center">
