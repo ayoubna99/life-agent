@@ -302,4 +302,83 @@ void main() {
       expect(s.writtenAt, isNotNull);
     },
   );
+
+  testWidgets(
+    '"Pull me out" opens the task the nudge was about, never a short break',
+    (t) async {
+      final env = Env(hour: 10);
+      for (final task in const [
+        LocalTask(
+          id: 'b',
+          date: '2026-10-27',
+          title: 'Offline reset: tea, stretch, tidy',
+          minutes: 10,
+          startTime: '10:30',
+        ),
+        LocalTask(
+          id: 'c',
+          date: '2026-10-27',
+          title: 'Apply to 3 internships',
+          minutes: 90,
+          startTime: '14:00',
+        ),
+        LocalTask(
+          id: 'd',
+          date: '2026-10-27',
+          title: 'Gym',
+          minutes: 60,
+          startTime: '18:00',
+        ),
+      ]) {
+        await env.tasks.upsert(task);
+      }
+      env.native.launchAction = 'pull|Gym';
+      await t.pumpWidget(MaterialApp(home: HomePage(services: env.services)));
+      await t.pumpAndSettle();
+      expect(t.widget<Text>(find.byKey(const Key('task-title'))).data, 'Gym');
+      await t.pageBack();
+      await t.pumpAndSettle();
+
+      // no task named: the next one worth leaving an app for, skipping the 10 minute break
+      env.native.launchAction = 'pull';
+      await t.pumpWidget(
+        MaterialApp(
+          home: HomePage(key: UniqueKey(), services: env.services),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('task-title')), findsOneWidget);
+      expect(find.text('Apply to 3 internships'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'the page shows lines as they will appear: the real task and app filled in',
+    (t) async {
+      final s = NightShift.fromJson({
+        'day': '2026-10-28',
+        'status': 'final',
+        'shift': {
+          'theories': <Object?>[],
+          'angles': [
+            {
+              'id': 'next',
+              'name': 'Blunt, the next task',
+              'lines': [
+                {'id': 'n1', 'text': '{task} first. {app} can wait.'},
+              ],
+            },
+          ],
+        },
+      })!;
+      await t.pumpWidget(
+        MaterialApp(
+          home: NightShiftPage(shift: s, task: 'Gym', app: 'TikTok'),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('"Gym first. TikTok can wait."'), findsOneWidget);
+      expect(find.textContaining('{task}'), findsNothing);
+    },
+  );
 }

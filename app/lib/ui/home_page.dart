@@ -77,12 +77,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   NightShift? _shift;
 
+  /// The next important task on the bank's day (what its {task} lines will name).
+  String? _shiftTask;
+
   Future<void> _loadShift({bool force = false}) async {
     try {
       final shift = force
           ? await s.api.nightShift()
           : await s.syncNightShift() ?? _shift;
-      if (mounted && shift != null) setState(() => _shift = shift);
+      String? task;
+      if (shift != null) {
+        final tasks = [
+          for (final t in await s.tasks.forDate(shift.day))
+            if (!t.done && t.minutes >= 15) t,
+        ]..sort((a, b) => (a.startTime ?? '99').compareTo(b.startTime ?? '99'));
+        task = tasks.firstOrNull?.title;
+      }
+      if (mounted && shift != null) {
+        setState(() {
+          _shift = shift;
+          _shiftTask = task;
+        });
+      }
     } catch (_) {
       // the card says the first night shift runs tonight
     }
@@ -120,6 +136,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // a plan goes on the phone as soon as it exists (alarms set the night before, not in the morning)
       await s.applyPlan(today);
       await s.applyPlan(tomorrow);
+      // a new plan for tomorrow: the night shift redoes its lines so they name the real tasks
+      if (tomorrow != null) {
+        s.redoShiftFor(tomorrow).then((shift) {
+          if (shift != null && mounted) setState(() => _shift = shift);
+        });
+      }
       _todayOnPhone = today != null && await s.planApplier.applied(today);
       if (mounted) {
         setState(() {
@@ -163,9 +185,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } catch (_) {}
     if (!mounted || action == null) return;
     if (action == 'plan') _planTomorrow();
-    if (action == 'pull') {
-      // "Pull me out" on a nudge: Life opens on what matters next
-      final next = nextTask(await s.tasks.forDate(s.today), s.now());
+    if (action == 'pull' || action.startsWith('pull|')) {
+      // "Pull me out" on a nudge: Life opens the task that nudge was about, else the next one worth leaving an app for
+      // (a short break or a chore is never the reason)
+      final todays = await s.tasks.forDate(s.today);
+      final title = action.startsWith('pull|') ? action.substring(5) : null;
+      final named = title == null
+          ? null
+          : todays.where((t) => t.title == title && !t.done).firstOrNull;
+      final next =
+          named ??
+          nextTask([
+            for (final t in todays)
+              if (t.minutes >= 15) t,
+          ], s.now());
       if (!mounted) return;
       if (next != null) {
         _openTask(next);
@@ -396,7 +429,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         shift: _shift,
         onOpen: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => NightShiftPage(shift: _shift!),
+            builder: (_) => NightShiftPage(
+              shift: _shift!,
+              task: _shiftTask,
+              app: _profile.apps.firstOrNull,
+            ),
           ),
         ),
       ),

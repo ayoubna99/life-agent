@@ -186,7 +186,8 @@ class LimitWatcherService : Service() {
         // First choice: tonight's nudge bank from the night shift. Code picks the ANGLE by contextual Thompson sampling
         // and shows its next unseen line at once (no waiting, no network). Without a bank (first day, or every line
         // used): the style bandit, and the agent writes the line live.
-        val fromBank = NudgeBank.pick(store.bank(), band, limit.label, store.seenLines(), store.angleStats(), store.angleStats(context), rnd)
+        val nextTask = DayRules.importantNext(store.tasks(LogicalDay.today(now, tz)), hhmm)?.title
+        val fromBank = NudgeBank.pick(store.bank(), band, limit.label, store.seenLines(), store.angleStats(), store.angleStats(context), rnd, nextTask)
         val arm: Arm
         val explore: Boolean
         val propensity: Double
@@ -230,7 +231,7 @@ class LimitWatcherService : Service() {
                 windowMs = if (demo) DemoPolicy.WINDOW_MS else OutcomeMeter.WINDOW_MS,
                 leftWithinMs = if (demo) DemoPolicy.LEFT_WITHIN_MS else OutcomeMeter.LEFT_WITHIN_MS,
                 demo = demo, propensity = propensity, band = band, message = text,
-                angle = fromBank?.angle?.id, lineId = fromBank?.line?.id,
+                angle = fromBank?.angle?.id, lineId = fromBank?.line?.id, task = nextTask,
                 moment = Moment(
                     Moment.dayType(cal.get(Calendar.DAY_OF_WEEK)), Moment.depth(used, limit.minutes),
                     Moment.taskSoon(store.tasks(LogicalDay.today(now, tz)), hhmm), fromBank?.angle?.tone, fromBank?.angle?.topic,

@@ -214,6 +214,9 @@ class NativeStore(context: Context) {
         runCatching { val u = unsent(); (maxOf(0, u.length() - 5) until u.length()).map { u.getJSONObject(it).optString("message") } }.getOrDefault(emptyList())
 
     /** The user tapped "Pull me out" on the nudge [pendingId]. */
+    /** The task the nudge [pendingId] points to, for "Pull me out". */
+    fun pendingTask(pendingId: String): String? = pending().firstOrNull { it.id == pendingId }?.task
+
     fun markPulled(pendingId: String) {
         savePending(pending().map { if (it.id == pendingId) it.copy(pulled = true) else it })
     }
@@ -230,6 +233,8 @@ class NativeStore(context: Context) {
         val propensity: Double, val band: Band, val message: String,
         val angle: String? = null, val lineId: String? = null, val pulled: Boolean = false,
         val moment: Moment? = null,
+        /** The task "Pull me out" opens: the one the line was about, or the next important one. */
+        val task: String? = null,
     )
 
     fun pending(): List<Pending> = try {
@@ -242,6 +247,7 @@ class NativeStore(context: Context) {
                 it.optDouble("propensity", 1.0), Band.of(it.optString("band")) ?: Band.NIGHT, it.optString("message"),
                 it.optString("angle").takeIf { a -> a.isNotEmpty() }, it.optString("line").takeIf { l -> l.isNotEmpty() }, it.optBoolean("pulled", false),
                 it.optJSONObject("moment")?.let { m -> Moment(m.getString("dayType"), m.getString("depth"), m.getBoolean("taskSoon"), m.optString("tone").ifEmpty { null }, m.optString("topic").ifEmpty { null }) },
+                it.optString("task").ifEmpty { null },
             )
         }
     } catch (e: Exception) {
@@ -256,7 +262,7 @@ class NativeStore(context: Context) {
                     .put("reason", p.reason.wire).put("at", p.atMs).put("day", p.day).put("time", p.time).put("window", p.windowMs)
                     .put("leftWithin", p.leftWithinMs).put("demo", p.demo)
                     .put("propensity", p.propensity).put("band", p.band.wire).put("message", p.message)
-                    .put("angle", p.angle ?: "").put("line", p.lineId ?: "").put("pulled", p.pulled)
+                    .put("angle", p.angle ?: "").put("line", p.lineId ?: "").put("pulled", p.pulled).put("task", p.task ?: "")
                     .apply {
                         p.moment?.let { m ->
                             put("moment", JSONObject().put("dayType", m.dayType).put("depth", m.depth).put("taskSoon", m.taskSoon).put("tone", m.tone ?: "").put("topic", m.topic ?: ""))

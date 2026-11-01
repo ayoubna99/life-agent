@@ -16,7 +16,7 @@ import { parseExperimentLog, summarizeExperiments } from './experiments.ts';
 import { parseNights } from './nights.ts';
 import { parseEveningRequest, runEvening } from './evening.ts';
 import { speakableText, synthesize, toBase64, ttsConfigFromEnv } from './tts.ts';
-import { historyText, judgeTheories, withBefore, NIGHT, runCritic, runStudy, usedLines, type StoredShift } from './nightshift.ts';
+import { historyText, judgeTheories, planKey, withBefore, NIGHT, runCritic, runStudy, usedLines, type StoredShift } from './nightshift.ts';
 import { STARTING_BELIEFS } from './theories.ts';
 import { advanceTaper, writeTrade } from './taper.ts';
 import { angleResults } from './experiments.ts';
@@ -147,8 +147,10 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
         const deps = { models, fetchImpl: env.fetchImpl };
         if (step === 'study') {
           const previous = await store.getNightShift();
+          // at most every 6 hours, unless the plan for that day changed: the lines name its tasks, so they are redone
+          const dayPlan = await store.getPlan(day);
           const fresh = previous?.day === day && previous.updated_at && Date.now() - Date.parse(previous.updated_at) < NIGHT.minHoursBetween * 3600_000;
-          if (fresh && body.test !== true) return json({ shift: previous, skipped: 'recent' });
+          if (fresh && body.test !== true && previous.shift.plan_key === planKey(dayPlan?.data)) return json({ shift: previous, skipped: 'recent' });
           await spendQuota(store, limits);
           const [profile, strategy, nights, events] = await Promise.all([
             store.getProfile(),
@@ -168,6 +170,7 @@ export async function handle(req: Request, env: HandlerEnv): Promise<Response> {
           const lastNight = previous ? judgeTheories(previous.shift.theories.filter((t) => t.when && t.test), recent.filter((e) => !previous.updated_at || e.day < previous.day)) : [];
           shift.theories = withBefore(shift.theories, lastNight);
           shift.read = { nudges: recent.length, nights: nights.length, plans: plans.length, days: NIGHT.historyDays };
+          shift.plan_key = planKey(dayPlan?.data);
           const stored: StoredShift = { day, status: 'draft', shift, model };
           await store.saveNightShift(stored);
           return json({ shift: stored });

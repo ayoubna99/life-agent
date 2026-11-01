@@ -42,8 +42,11 @@ class MainActivity : FlutterActivity() {
         val open = intent?.getStringExtra(EXTRA_OPEN) ?: return
         if (open.startsWith("pull:")) {
             // "Pull me out" on a nudge: the tap counts in that nudge's result, then Life shows what matters next
-            NativeStore(this).markPulled(open.removePrefix("pull:"))
-            pendingOpen = "pull"
+            val store = NativeStore(this)
+            val id = open.removePrefix("pull:")
+            val task = store.pendingTask(id)
+            store.markPulled(id)
+            pendingOpen = if (task != null) "pull|$task" else "pull"
         } else {
             pendingOpen = open
         }

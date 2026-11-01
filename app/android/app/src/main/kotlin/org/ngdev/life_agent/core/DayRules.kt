@@ -20,6 +20,9 @@ object DayRules {
         pending.firstOrNull { it.startTime == null }?.let { return it }
         return timed.first()
     }
+
+    /** The next task that is worth leaving an app for (15+ minutes): a short break or a chore is never the reason. */
+    fun importantNext(tasks: List<TaskLite>, nowHHmm: String): TaskLite? = nextTask(tasks.filter { it.minutes >= 15 }, nowHHmm)
 }
 
 /** The user's own reminder: whenever they spend [minutes] in a row on an app ([pkg] "*" = any app), remind them to [ask]. */

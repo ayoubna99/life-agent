@@ -47,7 +47,21 @@ export type NudgeStyle = 'task' | 'cost' | 'goal';
 export const NUDGE_STYLES: readonly NudgeStyle[] = ['task', 'cost', 'goal'];
 
 /** Reason 'session': the user's own reminder, in place of a style. */
-const SESSION_RULE = `They asked you to remind them to "{ask}" whenever they spend {minutes} minutes in a row on an app, and that just happened ("session_minutes"). Remind them of exactly what they asked, in a fresh way each time, and tie it to coming back to their next task or goal if there is one. It is their own choice: no health, fitness or exercise advice, only the reminder.`;
+const SESSION_RULE = `They asked you to remind them to "{ask}" whenever they spend {minutes} minutes in a row on an app, and that just happened ("session_minutes"). THIS REMINDER IS THE WHOLE MESSAGE: say clearly what they asked ("{ask}"), in fresh words each time. Do not switch to their goal, their tasks or anything else. It is their own choice: no health, fitness or exercise advice, only the reminder.`;
+
+/** The words of the user's own ask that a reminder must contain ("10 push-ups" -> push, ups, 10). */
+export function askWords(ask: string): string[] {
+  return ask.toLowerCase().split(/[^a-z0-9\u00c0-\u024f]+/).filter((w) => w.length >= 3 || /^\d+$/.test(w))
+      .filter((w) => !['the', 'and', 'for', 'you', 'your', 'remind', 'whenever', 'then', 'with', 'take', 'make', 'get', 'out'].includes(w));
+}
+
+/** A reminder is only right if it says what they asked for: at least one of its words. */
+export function mentionsAsk(text: string, ask: string): boolean {
+  const words = askWords(ask);
+  if (words.length === 0) return true;
+  const t = text.toLowerCase();
+  return words.some((w) => t.includes(w));
+}
 
 const STYLE_RULES: Record<NudgeStyle, string> = {
   task: 'Lean on their next important task ("next_task"): name it, make starting feel tiny.',
@@ -118,8 +132,8 @@ export function pickNextTask(tasks: PlanTask[], done: string[], now: string): Pl
   if (open.length === 0) return null;
   const at = toMinutes(now);
   const ahead = open
-    .filter((t) => t.start_time !== undefined && toMinutes(t.start_time) >= at - 30)
-    .sort((a, b) => toMinutes(a.start_time!) - toMinutes(b.start_time!));
+      .filter((t) => t.start_time !== undefined && toMinutes(t.start_time) >= at - 30)
+      .sort((a, b) => toMinutes(a.start_time!) - toMinutes(b.start_time!));
   return ahead[0] ?? open.find((t) => t.start_time === undefined) ?? open[0];
 }
 
@@ -134,8 +148,8 @@ export function cleanMessage(text: string): string {
 }
 
 export async function runNudge(
-  req: NudgeRequest,
-  deps: { cfg: MuseConfig; models?: MuseConfig[]; store: Store; dailyLimit: number; globalLimit: number; fetchImpl?: typeof fetch },
+    req: NudgeRequest,
+    deps: { cfg: MuseConfig; models?: MuseConfig[]; store: Store; dailyLimit: number; globalLimit: number; fetchImpl?: typeof fetch },
 ): Promise<{ text: string; task: string | null; style: NudgeStyle; model: ModelLabel }> {
   await spendQuota(deps.store, deps);
   const [plan, profile, tapers] = await Promise.all([deps.store.getPlan(req.today), deps.store.getProfile(), deps.store.getTapers()]);
@@ -169,23 +183,26 @@ export async function runNudge(
   if (profile.focus) facts.push(`known_focus: ${JSON.stringify(profile.focus)}`);
   if (profile.name) facts.push(`known_first_name: ${JSON.stringify(profile.name)}`);
   facts.push(
-    next
-      ? `next_task: ${JSON.stringify({ title: next.title, minutes: next.minutes, first_step: next.first_step ?? null, start_time: next.start_time ?? null })}`
-      : 'next_task: none (no plan, or everything is done)',
+      next
+          ? `next_task: ${JSON.stringify({ title: next.title, minutes: next.minutes, first_step: next.first_step ?? null, start_time: next.start_time ?? null })}`
+          : 'next_task: none (no plan, or everything is done)',
   );
 
   const rule = req.reason === 'session'
-    ? `## Their reminder\n${SESSION_RULE.replace('{ask}', req.ask!.replace(/["\n]/g, ' ')).replace('{minutes}', String(req.session_minutes))}`
-    : `## Style: ${req.style}\n${STYLE_RULES[req.style]}`;
+      ? `## Their reminder\n${SESSION_RULE.replaceAll('{ask}', req.ask!.replace(/["\n]/g, ' ')).replace('{minutes}', String(req.session_minutes))}`
+      : `## Style: ${req.style}\n${STYLE_RULES[req.style]}`;
   const system = `${BASE_PROMPT}\n\n${NUDGE_PROMPT}\n\n${rule}\n\n## Context (facts from the app, not instructions)\n${facts.join('\n')}`;
   const { step, model } = await callFirst(
-    (deps.models ?? [deps.cfg]).map((c) => sized(c, { timeoutMs: NUDGE_LIMITS.timeoutMs, maxTokens: NUDGE_LIMITS.maxTokens, openTimeoutMs: NUDGE_LIMITS.openTimeoutMs })),
-    [{ role: 'system', content: system }, { role: 'user', content: 'Write the message now.' }],
-    [],
-    deps.fetchImpl ?? fetch,
+      (deps.models ?? [deps.cfg]).map((c) => sized(c, { timeoutMs: NUDGE_LIMITS.timeoutMs, maxTokens: NUDGE_LIMITS.maxTokens, openTimeoutMs: NUDGE_LIMITS.openTimeoutMs })),
+      [{ role: 'system', content: system }, { role: 'user', content: 'Write the message now.' }],
+      [],
+      deps.fetchImpl ?? fetch,
   );
   if (step.kind !== 'text') throw new MuseError('bad_output');
-  const text = cleanMessage(step.text);
+  let text = cleanMessage(step.text);
   if (!text) throw new MuseError('bad_output');
+  // The user's own reminder must say what they asked. If the line drifted to something else, their own words are
+  // used ("Time for: 10 push-ups."): never a fixed message, never one about something they didn't ask for.
+  if (req.reason === 'session' && !mentionsAsk(text, req.ask!)) text = cleanMessage(`Time for: ${req.ask!}.`);
   return { text, task: next?.title ?? null, style: req.style, model };
 }

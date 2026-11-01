@@ -113,10 +113,10 @@ export async function writeTrade(t: Taper, profile: Profile, plan: PlanData | nu
   ].filter(Boolean);
   try {
     const { step } = await callFirst(
-        models.map((c) => sized(c, { maxTokens: 120, timeoutMs: 12_000, openTimeoutMs: 20_000 })),
-        [{ role: 'system', content: TRADE_PROMPT }, { role: 'user', content: facts.join('\n') }],
-        [],
-        fetchImpl,
+      models.map((c) => sized(c, { maxTokens: 120, timeoutMs: 12_000, openTimeoutMs: 20_000 })),
+      [{ role: 'system', content: TRADE_PROMPT }, { role: 'user', content: facts.join('\n') }],
+      [],
+      fetchImpl,
     );
     if (step.kind !== 'text') return null;
     const line = step.text.replace(/\s+/g, ' ').replace(/^["'“”]+|["'“”]+$/g, '').trim();

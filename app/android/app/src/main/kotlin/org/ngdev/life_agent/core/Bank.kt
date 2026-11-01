@@ -39,9 +39,10 @@ object NudgeBank {
     const val PROPENSITY_DRAWS = 400
 
     /** The angles that fit now ([band], [app]) and still have a line not shown yet. */
-    fun eligible(angles: List<BankAngle>, band: Band, app: String, seen: Set<String>): List<BankAngle> =
+    fun eligible(angles: List<BankAngle>, band: Band, app: String, seen: Set<String>, task: String? = null): List<BankAngle> =
         angles.filter { band in it.bands && (it.apps.isEmpty() || it.apps.any { a -> a.equals(app, ignoreCase = true) }) }
-            .map { it.copy(lines = it.lines.filter { l -> l.id !in seen }) }
+            // a line about "{task}" is only shown when there is a real next task to put in
+            .map { it.copy(lines = it.lines.filter { l -> l.id !in seen && (task != null || !l.text.contains("{task}")) }) }
             .filter { it.lines.isNotEmpty() }
 
     /**
@@ -58,9 +59,9 @@ object NudgeBank {
 
     fun pick(
         angles: List<BankAngle>, band: Band, app: String, seen: Set<String>,
-        global: Map<String, ArmStat>, local: Map<String, ArmStat>, rnd: Random,
+        global: Map<String, ArmStat>, local: Map<String, ArmStat>, rnd: Random, task: String? = null,
     ): BankPick? {
-        val fit = eligible(angles, band, app, seen)
+        val fit = eligible(angles, band, app, seen, task)
         if (fit.isEmpty()) return null
         val post = fit.map { posterior(global[it.id], local[it.id], StartingBeliefs.of(it.tone, it.topic)) }
         fun draw(): Int = post.indices.maxByOrNull { Beta.sample(post[it].first, post[it].second, rnd) }!!
@@ -70,6 +71,6 @@ object NudgeBank {
         val best = post.indices.maxByOrNull { post[it].first / (post[it].first + post[it].second) }!!
         val angle = fit[chosen]
         val line = angle.lines.first()
-        return BankPick(angle, line, line.text.replace("{app}", app), maxOf(same, 1).toDouble() / PROPENSITY_DRAWS, chosen != best)
+        return BankPick(angle, line, line.text.replace("{app}", app).replace("{task}", task ?: ""), maxOf(same, 1).toDouble() / PROPENSITY_DRAWS, chosen != best)
     }
 }

@@ -217,6 +217,17 @@ class AppServices {
     }
   }
 
+  String? _shiftPlanKey;
+
+  /// Tomorrow's plan was saved or changed: run the night shift again so its lines name the real tasks (the server skips
+  /// it when nothing changed).
+  Future<NightShift?> redoShiftFor(SavedPlan plan) async {
+    final key = PlanApplier.fingerprint(plan);
+    if (key == _shiftPlanKey) return null;
+    _shiftPlanKey = key;
+    return syncNightShift(run: true);
+  }
+
   /// "Night shift (test)": runs it now and says what came out.
   Future<String> testNightShift() async {
     final s = await syncNightShift(run: true, test: true);

@@ -71,4 +71,17 @@ class NudgeBankTest {
         assertTrue(!Moment.taskSoon(tasks, "05:30"), "the small chore does not count, the gym is 2.5 h away")
         assertTrue(!Moment.taskSoon(listOf(TaskLite("Gym", 60, "08:00", null, true)), "07:00"), "done tasks do not count")
     }
+
+    @Test fun aLineAboutTheNextTaskUsesTheRealTaskOrIsNotShown() {
+        val a = BankAngle("next", "n", Arm.TASK, Band.values().toSet(), emptyList(), listOf(BankLine("n1", "{task} first. {app} can wait.")))
+        val b = BankAngle("goal", "g", Arm.GOAL, Band.values().toSet(), emptyList(), listOf(BankLine("g1", "Your thesis won't write itself.")))
+        val withTask = NudgeBank.pick(listOf(a), Band.NIGHT, "TikTok", emptySet(), emptyMap(), emptyMap(), Random(1), "Gym")!!
+        assertEquals("Gym first. TikTok can wait.", withTask.text)
+        // no real task today: that line is never shown with a blank or an invented task
+        assertNull(NudgeBank.pick(listOf(a), Band.NIGHT, "TikTok", emptySet(), emptyMap(), emptyMap(), Random(1), null))
+        assertEquals("goal", NudgeBank.pick(listOf(a, b), Band.NIGHT, "TikTok", emptySet(), emptyMap(), emptyMap(), Random(1), null)!!.angle.id)
+        // a 10 minute break is never "the next task"
+        val tasks = listOf(TaskLite("Offline reset: tea, stretch, tidy", 10, "10:30", null, false), TaskLite("Gym", 60, "18:00", null, false))
+        assertEquals("Gym", DayRules.importantNext(tasks, "10:00")!!.title)
+    }
 }

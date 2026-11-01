@@ -913,9 +913,17 @@ class _TheoryLine extends StatelessWidget {
 /// Everything from the newest night shift: the theories (kept, testing, rejected), tomorrow's ideas with their lines
 /// and results, and a short excerpt of how the open model reasoned about it.
 class NightShiftPage extends StatelessWidget {
-  const NightShiftPage({super.key, required this.shift});
+  const NightShiftPage({super.key, required this.shift, this.task, this.app});
 
   final NightShift shift;
+
+  /// What the phone puts in a line's {task} and {app} (the real next task and app), so lines read as they will be shown.
+  final String? task;
+  final String? app;
+
+  String _fill(String line) => line
+      .replaceAll('{task}', task ?? 'your next task')
+      .replaceAll('{app}', app ?? 'the app');
 
   @override
   Widget build(BuildContext context) {
@@ -999,7 +1007,7 @@ class NightShiftPage extends StatelessWidget {
                   for (final l in a.lines)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: Text('"$l"', style: t.bodyMedium),
+                      child: Text('"${_fill(l)}"', style: t.bodyMedium),
                     ),
                 ],
               ),
@@ -1019,7 +1027,7 @@ class NightShiftPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '"$line"',
+                      '"${_fill(line)}"',
                       style: t.bodyMedium?.copyWith(
                         decoration: TextDecoration.lineThrough,
                       ),

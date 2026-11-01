@@ -142,3 +142,28 @@ test('a line already sent is never written again', () => {
   const s = validateShift(STUDY, '2026-10-30', used);
   assert.equal(s.angles[0].lines[0].text, 'Tomorrow-you wants that 6 AM gym. Close it.');
 });
+
+test('lines name the real plan, and a new plan for that day means new lines (no 6 hour wait)', async () => {
+  const { planKey } = await import('../supabase/functions/_shared/nightshift.ts');
+  const store = new MemoryStore();
+  store.profile = { apps: ['TikTok'] };
+  const reply = () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify(STUDY) } }] }), { status: 200 });
+  const first = http({ action: 'nightshift', step: 'study', day: '2026-10-30' }, store, reply);
+  const firstRes = await (await first.res).json();
+  assert.ok(firstRes.shift, JSON.stringify(firstRes));
+  const a = firstRes.shift;
+  assert.equal(a.shift.plan_key, 'none');
+  assert.match(JSON.parse(first.calls[0].init.body as string).messages[0].content, /names ONLY real things/);
+  // same day, no plan change: skipped
+  assert.equal((await (await http({ action: 'nightshift', step: 'study', day: '2026-10-30' }, store, () => { throw new Error('no call'); }).res).json()).skipped, 'recent');
+  // the plan for that day is saved: the study runs again and sees it
+  store.plans.set('2026-10-30', { date: '2026-10-30', status: 'ready', data: { tasks: [{ title: 'Gym', minutes: 60, start_time: '07:00' }], limits: [] } });
+  // (fresh lines: the ones from the first bank may not be written again)
+  const fresh = { ...STUDY, angles: [{ id: 'gym_blunt', name: 'Gym', style: 'task', lines: ['Gym at 7. Shoes by the door.'] }] };
+  const again = http({ action: 'nightshift', step: 'study', day: '2026-10-30' }, store, () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify(fresh) } }] }), { status: 200 }));
+  const againRes = await (await again.res).json();
+  assert.ok(againRes.shift, JSON.stringify(againRes));
+  const b = againRes.shift;
+  assert.equal(b.shift.plan_key, planKey({ tasks: [{ title: 'Gym', minutes: 60, start_time: '07:00' }], limits: [] }));
+  assert.match(JSON.parse(again.calls[0].init.body as string).messages[1].content, /2026-10-30: 07:00 Gym \(60 min\)/);
+});

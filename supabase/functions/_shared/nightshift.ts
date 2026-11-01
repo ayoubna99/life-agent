@@ -67,6 +67,8 @@ export interface Shift {
   critic: { cut: number; reasons: string[]; lines?: { text: string; why: string }[] } | null;
   /** What the study read in its one request. */
   read?: { nudges: number; nights: number; plans: number; days: number };
+  /** The bank day's plan when the study ran: a new plan means new lines (they name its tasks). */
+  plan_key?: string;
 }
 
 export interface StoredShift {
@@ -220,7 +222,7 @@ export function historyText(h: {
   out.push('# Step-down targets per app (code moves them; the person is cutting down, not quitting)');
   if (!h.tapers?.length) out.push('none yet');
   for (const t of h.tapers ?? []) out.push(`${t.app}: typical ${t.baseline} min/day -> today ${t.target}, goal ${t.goal}; last days ${t.recent.map((r) => `${r.day} ${r.met ? 'met' : 'missed'}`).join(', ') || '-'}; trade: ${t.trade ?? '-'}`);
-  out.push('# Plans');
+  out.push("# Plans (the bank is for the last date here; if that date is missing, it has no plan yet)");
   for (const pl of h.plans) out.push(`${pl.date}: ${pl.data.tasks.map((t) => `${t.start_time ?? '--:--'} ${t.title} (${t.minutes} min)`).join('; ') || 'no tasks'}`);
   out.push(`# Every nudge, oldest first (${h.events.length}): day time band day_type app trigger depth task_soon angle style tone topic "words" -> what they did`);
   for (const e of h.events) {
@@ -252,10 +254,14 @@ Read the whole history below. Scrolling has different causes at different moment
    - at most 12 words, one sentence or two very short ones;
    - no minutes, no hours, no "you're at", no limits: the card title already shows the numbers;
    - never starts with their name and a comma;
-   - concrete: their real tasks, goal, plans, nights; never generic advice ("take a break", "drink water", "rest");
+   - concrete: {task}, their own goal, their nights; never generic advice ("take a break", "drink water", "rest");
    - fresh: never a line from the history or the last bank; the same angle in NEW words;
    - varied: blunt, playful, curious, a dare; never preachy, never a lecture, no emoji;
-   - may contain {app} for the app's name.
+   - may contain {app} for the app's name;
+   - names ONLY real things: the tasks in the plan for the bank's day (listed under "# Plans"), their own goal, their
+     nights. Name those tasks often: that is what makes a line theirs. Never invent or recall a task, hobby or activity
+     that is not in that plan. If that day has no plan yet, write {task} where a task goes: the phone puts in their
+     real next important task at that moment (a line with {task} is only shown when there is one).
 4. NOTES: two sentences on what you learned tonight.
 
 Answer with JSON only:
@@ -271,18 +277,18 @@ export interface NightDeps {
 }
 
 const effortFor = (models: MuseConfig[], effort: 'low' | 'medium' | 'high', want: { maxTokens: number; timeoutMs: number }) =>
-    models.map((m) => sized(withEffort(m, effort), want));
+  models.map((m) => sized(withEffort(m, effort), want));
 
 /** Step 1: the study. Returns the validated draft and which model wrote it. */
 export async function runStudy(history: string, day: string, used: Set<string>, name: string | undefined, deps: NightDeps, events: ExperimentEvent[] = []): Promise<{ shift: Shift; model: string }> {
   const { step, model } = await callFirst(
-      effortFor(deps.models, 'medium', { maxTokens: NIGHT.studyTokens, timeoutMs: NIGHT.studyTimeoutMs }),
-      [
-        { role: 'system', content: STUDY_PROMPT },
-        { role: 'user', content: `Tomorrow's bank is for ${day}.\n\n${history}` },
-      ],
-      [],
-      deps.fetchImpl ?? fetch,
+    effortFor(deps.models, 'medium', { maxTokens: NIGHT.studyTokens, timeoutMs: NIGHT.studyTimeoutMs }),
+    [
+      { role: 'system', content: STUDY_PROMPT },
+      { role: 'user', content: `Tomorrow's bank is for ${day}.\n\n${history}` },
+    ],
+    [],
+    deps.fetchImpl ?? fetch,
   );
   if (step.kind !== 'text') throw new MuseError('bad_output');
   const shift = validateShift(readJson(step.text), day, used, name, events);
@@ -295,13 +301,13 @@ export async function runCritic(shift: Shift, profile: Profile, deps: NightDeps)
   const listing = shift.angles.flatMap((a) => a.lines.map((l) => `${l.id} [${a.name}] ${l.text}`)).join('\n');
   const about = `About them: ${profile.name ?? 'the user'}; focus: ${profile.focus ?? 'not said'}; theories: ${shift.theories.filter((t) => t.status !== 'rejected').map((t) => t.statement).join(' | ') || 'none yet'}`;
   const { step } = await callFirst(
-      effortFor(deps.models, 'low', { maxTokens: NIGHT.criticTokens, timeoutMs: NIGHT.criticTimeoutMs }),
-      [
-        { role: 'system', content: CRITIC_PROMPT },
-        { role: 'user', content: `${about}\n\nLines:\n${listing}` },
-      ],
-      [],
-      deps.fetchImpl ?? fetch,
+    effortFor(deps.models, 'low', { maxTokens: NIGHT.criticTokens, timeoutMs: NIGHT.criticTimeoutMs }),
+    [
+      { role: 'system', content: CRITIC_PROMPT },
+      { role: 'user', content: `${about}\n\nLines:\n${listing}` },
+    ],
+    [],
+    deps.fetchImpl ?? fetch,
   );
   if (step.kind !== 'text') throw new MuseError('bad_output');
   const raw = readJson(step.text);
@@ -311,8 +317,8 @@ export async function runCritic(shift: Shift, profile: Profile, deps: NightDeps)
     if (typeof id === 'string') cut.set(id, str((c as Record<string, unknown>).why, 120));
   }
   const angles = shift.angles
-      .map((a) => ({ ...a, lines: a.lines.filter((l) => !cut.has(l.id)) }))
-      .filter((a) => a.lines.length > 0);
+    .map((a) => ({ ...a, lines: a.lines.filter((l) => !cut.has(l.id)) }))
+    .filter((a) => a.lines.length > 0);
   const left = angles.reduce((n, a) => n + a.lines.length, 0);
   const removed = shift.angles.reduce((n, a) => n + a.lines.length, 0) - left;
   if (left < 3) return { ...shift, critic: { cut: 0, reasons: ['kept the draft: cutting would leave too few lines'] } };
@@ -326,4 +332,12 @@ export function usedLines(events: ExperimentEvent[], previous: StoredShift | nul
   for (const e of events) if (e.message) used.add(norm(e.message));
   for (const a of previous?.shift.angles ?? []) for (const l of a.lines) used.add(norm(l.text));
   return used;
+}
+
+/** A short fingerprint of a plan's tasks, so the night shift knows when the plan it wrote lines for has changed. */
+export function planKey(plan: PlanData | null | undefined): string {
+  const text = (plan?.tasks ?? []).map((t) => `${t.start_time ?? ''} ${t.title}`).join('|');
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return text ? h.toString(36) : 'none';
 }
