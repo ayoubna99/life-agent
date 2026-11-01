@@ -34,7 +34,7 @@
 
 ---
 
-> It's 1 AM. You said you'd sleep at 11. You've been on TikTok for two hours.
+> It's 1 AM. You said you'd be off your phone by 11. You've been on TikTok for two hours.
 >
 > A card slides over the video: **"Gym at 6. TikTok will still be here."** One button: **Pull me out**.
 >
@@ -110,7 +110,7 @@ to end on a real device; it is not a study of whether Life changes anyone's habi
 | Nudges shown and measured by the phone (outside demo mode) | **39**: each one logged with its moment, its words and what happened next |
 | Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events. There is no control group yet, so this is not an effect size; the off-policy lift (Under the hood, 4) needs more data before it means anything. |
 | Night shift, end to end | Muse Spark Open read the history, wrote theories and the nudge bank, and the critic finished **41 s** after the draft was saved |
-| The bank in use | Ideas from the night shift were shown and scored (in demo mode): the "night TikTok wind-down" idea got the user to leave **2 of 3** times |
+| The bank in use | Ideas from the night shift were shown and scored (in demo mode): the "late-night TikTok" idea got the user to leave **2 of 3** times |
 
 Every number above comes from the app's own logs; the queries are in [docs/MEASURED.md](docs/MEASURED.md).
 
@@ -275,18 +275,6 @@ any nudge works: it tests them on you, the way researchers do in micro-randomize
 
 *These studies support the approach, not Life's exact numbers: one sec steps in when you open an app,
 Life steps in after you've been in it for a while.*
-
----
-
-## ✅ What Life is not
-
-| | |
-|---|---|
-| ❌ **Not a medical or mental-health app** | Lify talks about phone time and your plans only. It never gives health, sleep or therapy advice. Night data is "your phone went quiet at 03:12", never a sleep claim. The night-shift validator rejects health language in nudges. |
-| ❌ **Not basic RAG** | No vector store, no retrieval. Muse Spark Open reads your whole history in one 1M-token request. |
-| ❌ **Not a dashboard** | The numbers exist to drive actions on the phone (cards, alarms, limits), and every number shown says how many tries it's based on. |
-| ❌ **Not an education chatbot** | It can make a study sheet for a task in your plan, but it doesn't teach. It gets you to the task. |
-| ❌ **Not a fixed-message notifier** | No hard-coded nudge text anywhere. If the bank is empty and the model can't be reached, no nudge is sent and nothing is measured. |
 
 ---
 

@@ -109,6 +109,7 @@ export function lineProblem(text: string, used: Set<string>, name?: string): str
   if (/\n/.test(text)) return 'more than one line';
   if (/\b\d+\s*(m|min|mins|minutes?|h|hrs?|hours?)\b/i.test(text)) return 'repeats the numbers (the card title has them)';
   if (/\b(you'?re at|past your|your limit|limit of)\b/i.test(text)) return 'reads like a meter';
+  // keeps every line about time and plans: no health words
   if (/\b(addict\w*|anxiety|depress\w*|mental health|therapy|diagnos\w*)\b/i.test(text)) return 'health language';
   if (name && new RegExp(`^${name.replace(/[^\w]/g, '')}\\s*,\\s*you`, 'i').test(text)) return 'the old template opening';
   if (used.has(norm(text))) return 'already used';
@@ -270,18 +271,18 @@ export interface NightDeps {
 }
 
 const effortFor = (models: MuseConfig[], effort: 'low' | 'medium' | 'high', want: { maxTokens: number; timeoutMs: number }) =>
-  models.map((m) => sized(withEffort(m, effort), want));
+    models.map((m) => sized(withEffort(m, effort), want));
 
 /** Step 1: the study. Returns the validated draft and which model wrote it. */
 export async function runStudy(history: string, day: string, used: Set<string>, name: string | undefined, deps: NightDeps, events: ExperimentEvent[] = []): Promise<{ shift: Shift; model: string }> {
   const { step, model } = await callFirst(
-    effortFor(deps.models, 'medium', { maxTokens: NIGHT.studyTokens, timeoutMs: NIGHT.studyTimeoutMs }),
-    [
-      { role: 'system', content: STUDY_PROMPT },
-      { role: 'user', content: `Tomorrow's bank is for ${day}.\n\n${history}` },
-    ],
-    [],
-    deps.fetchImpl ?? fetch,
+      effortFor(deps.models, 'medium', { maxTokens: NIGHT.studyTokens, timeoutMs: NIGHT.studyTimeoutMs }),
+      [
+        { role: 'system', content: STUDY_PROMPT },
+        { role: 'user', content: `Tomorrow's bank is for ${day}.\n\n${history}` },
+      ],
+      [],
+      deps.fetchImpl ?? fetch,
   );
   if (step.kind !== 'text') throw new MuseError('bad_output');
   const shift = validateShift(readJson(step.text), day, used, name, events);
@@ -294,13 +295,13 @@ export async function runCritic(shift: Shift, profile: Profile, deps: NightDeps)
   const listing = shift.angles.flatMap((a) => a.lines.map((l) => `${l.id} [${a.name}] ${l.text}`)).join('\n');
   const about = `About them: ${profile.name ?? 'the user'}; focus: ${profile.focus ?? 'not said'}; theories: ${shift.theories.filter((t) => t.status !== 'rejected').map((t) => t.statement).join(' | ') || 'none yet'}`;
   const { step } = await callFirst(
-    effortFor(deps.models, 'low', { maxTokens: NIGHT.criticTokens, timeoutMs: NIGHT.criticTimeoutMs }),
-    [
-      { role: 'system', content: CRITIC_PROMPT },
-      { role: 'user', content: `${about}\n\nLines:\n${listing}` },
-    ],
-    [],
-    deps.fetchImpl ?? fetch,
+      effortFor(deps.models, 'low', { maxTokens: NIGHT.criticTokens, timeoutMs: NIGHT.criticTimeoutMs }),
+      [
+        { role: 'system', content: CRITIC_PROMPT },
+        { role: 'user', content: `${about}\n\nLines:\n${listing}` },
+      ],
+      [],
+      deps.fetchImpl ?? fetch,
   );
   if (step.kind !== 'text') throw new MuseError('bad_output');
   const raw = readJson(step.text);
@@ -310,8 +311,8 @@ export async function runCritic(shift: Shift, profile: Profile, deps: NightDeps)
     if (typeof id === 'string') cut.set(id, str((c as Record<string, unknown>).why, 120));
   }
   const angles = shift.angles
-    .map((a) => ({ ...a, lines: a.lines.filter((l) => !cut.has(l.id)) }))
-    .filter((a) => a.lines.length > 0);
+      .map((a) => ({ ...a, lines: a.lines.filter((l) => !cut.has(l.id)) }))
+      .filter((a) => a.lines.length > 0);
   const left = angles.reduce((n, a) => n + a.lines.length, 0);
   const removed = shift.angles.reduce((n, a) => n + a.lines.length, 0) - left;
   if (left < 3) return { ...shift, critic: { cut: 0, reasons: ['kept the draft: cutting would leave too few lines'] } };

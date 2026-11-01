@@ -1,6 +1,6 @@
 // Step-down targets: less of an app, one step at a time, only after the person succeeded at the step before.
 //
-// The method is the CHANGING-CRITERION design from behaviour therapy (shaping): start from the person's TYPICAL day
+// The method is the CHANGING-CRITERION design (step-by-step targets, each one earned): start from the person's TYPICAL day
 // (the median of the last 7 complete days, not the worst one), set a target about 15% lower, and lower it again only
 // when it was met on 2 of the last 3 days. Missing never raises the target and never speeds it up; it simply holds.
 // It stops at the person's own goal: the aim is less, not zero. (Cutting down to zero works worse than a set quit day
@@ -113,10 +113,10 @@ export async function writeTrade(t: Taper, profile: Profile, plan: PlanData | nu
   ].filter(Boolean);
   try {
     const { step } = await callFirst(
-      models.map((c) => sized(c, { maxTokens: 120, timeoutMs: 12_000, openTimeoutMs: 20_000 })),
-      [{ role: 'system', content: TRADE_PROMPT }, { role: 'user', content: facts.join('\n') }],
-      [],
-      fetchImpl,
+        models.map((c) => sized(c, { maxTokens: 120, timeoutMs: 12_000, openTimeoutMs: 20_000 })),
+        [{ role: 'system', content: TRADE_PROMPT }, { role: 'user', content: facts.join('\n') }],
+        [],
+        fetchImpl,
     );
     if (step.kind !== 'text') return null;
     const line = step.text.replace(/\s+/g, ' ').replace(/^["'“”]+|["'“”]+$/g, '').trim();
