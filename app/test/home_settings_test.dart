@@ -402,6 +402,11 @@ void main() {
         startsWith('Mo, 45 minutes of TikTok'),
       );
       expect(env.native.alarmTitles.single, '45 min on TikTok');
+      expect(
+        env.native.alarmOpens.single,
+        'pull',
+        reason: 'the test card has the Pull me out button, like a real nudge',
+      );
       expect(env.nudges.single['app'], 'TikTok');
     },
   );

@@ -427,6 +427,8 @@ class AppServices {
       message: text,
       card: true,
       title: '45 min on $app',
+      // the same card as a real nudge, with the Pull me out button
+      open: 'pull',
     );
     return ok
         ? 'In 10 seconds Lify\'s card appears. Open another app now to test.'

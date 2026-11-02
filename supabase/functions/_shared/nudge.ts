@@ -17,7 +17,11 @@ export const NUDGE_LIMITS = { maxDone: 20, maxDoneChars: 120, maxChars: 120, max
  * 'event': a limited app was opened during a calendar event (a lecture or meeting), where the limit is tighter.
  * 'session': the user's own reminder rule fired ("whenever I am 30 minutes on an app, remind me to do 10 push-ups").
  */
-export type NudgeReason = 'approaching' | 'limit' | 'over' | 'event' | 'session';
+export type NudgeReason = 'approaching' | 'limit' | 'over' | 'event' | 'session' | 'moment';
+
+/** The moments the phone works out (app core/Moments.kt). */
+export const MOMENT_KINDS = ['lost_intent', 'exit_point', 'planned_now', 'phone_down'] as const;
+export type MomentKind = (typeof MOMENT_KINDS)[number];
 
 export interface NudgeRequest {
   today: string;
@@ -37,6 +41,9 @@ export interface NudgeRequest {
   style: NudgeStyle;
   /** The last nudges the phone showed, so this one says something new. */
   recent: string[];
+  /** Reason 'moment': the facts the phone computed, and the same facts as a plain sentence (the fallback). */
+  moment?: { kind: MomentKind; facts: Record<string, string> };
+  default_text?: string;
 }
 
 /**
@@ -49,10 +56,29 @@ export const NUDGE_STYLES: readonly NudgeStyle[] = ['task', 'cost', 'goal'];
 /** Reason 'session': the user's own reminder, in place of a style. */
 const SESSION_RULE = `They asked you to remind them to "{ask}" whenever they spend {minutes} minutes in a row on an app, and that just happened ("session_minutes"). THIS REMINDER IS THE WHOLE MESSAGE: say clearly what they asked ("{ask}"), in fresh words each time. Do not switch to their goal, their tasks or anything else. It is their own choice: no health, fitness or exercise advice, only the reminder.`;
 
+const MOMENT_RULE = `## This moment (facts worked out by the phone from their own data)
+Turn these facts into ONE line they will read on a card over the app, like a friend who noticed. Be creative: a light
+question, a wink, a guess about what they were up to ("Looked like you were reading something. Did TikTok sneak in?"),
+or a callback to their own plan. Make them smile or pause, never feel told off.
+Hard rules: every number and time in your line must be one of the facts, exactly; never invent a task, an app or a
+reason they did not give (a guess must be a question, not a claim). At most 22 words. No lecture, no advice, no health
+or sleep claims, no emoji. Different words from "recent_nudges". Reply in the user's language.
+Ideas per moment (do not copy, find your own):
+- lost_intent: they opened one app for a reason and drifted: ask about what they came for, playfully.
+- exit_point: this is past the point where they usually leave on their own: remind them they usually stop here.
+- planned_now: their own plan says this time is for that task: hand them their own words back.
+- phone_down: they chose this phone-down time: connect tonight to tomorrow's first thing.`;
+
+/** Every number in [text] (minutes, times like 21:10) must appear in the facts: the model cannot invent a statistic. */
+export function numbersBacked(text: string, facts: Record<string, string>, fallback: string): boolean {
+  const known = new Set([...Object.values(facts), fallback].flatMap((v) => v.match(/\d+(?::\d+)?/g) ?? []));
+  return (text.match(/\d+(?::\d+)?/g) ?? []).every((n) => known.has(n));
+}
+
 /** The words of the user's own ask that a reminder must contain ("10 push-ups" -> push, ups, 10). */
 export function askWords(ask: string): string[] {
   return ask.toLowerCase().split(/[^a-z0-9\u00c0-\u024f]+/).filter((w) => w.length >= 3 || /^\d+$/.test(w))
-      .filter((w) => !['the', 'and', 'for', 'you', 'your', 'remind', 'whenever', 'then', 'with', 'take', 'make', 'get', 'out'].includes(w));
+    .filter((w) => !['the', 'and', 'for', 'you', 'your', 'remind', 'whenever', 'then', 'with', 'take', 'make', 'get', 'out'].includes(w));
 }
 
 /** A reminder is only right if it says what they asked for: at least one of its words. */
@@ -88,7 +114,17 @@ export function parseNudgeRequest(raw: unknown): NudgeRequest {
   const mins = (v: unknown, max: number) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= max;
   if (!mins(b.used_minutes, 1440)) throw new BadRequest('bad_minutes');
   if (b.limit_minutes !== undefined && !mins(b.limit_minutes, 1440)) throw new BadRequest('bad_minutes');
-  if (!['approaching', 'limit', 'over', 'event', 'session'].includes(b.reason as string)) throw new BadRequest('bad_reason');
+  if (!['approaching', 'limit', 'over', 'event', 'session', 'moment'].includes(b.reason as string)) throw new BadRequest('bad_reason');
+  let moment: NudgeRequest['moment'];
+  if (b.reason === 'moment') {
+    const m = b.moment as Record<string, unknown> | null;
+    const facts = m?.facts as Record<string, unknown> | null;
+    if (!m || !MOMENT_KINDS.includes(m.kind as MomentKind) || !facts || typeof facts !== 'object' || Array.isArray(facts)) throw new BadRequest('bad_moment');
+    const entries = Object.entries(facts);
+    if (entries.length === 0 || entries.length > 8 || entries.some(([k, v]) => !/^[a-z_]{1,40}$/.test(k) || typeof v !== 'string' || v.length > 150)) throw new BadRequest('bad_moment');
+    if (typeof b.default_text !== 'string' || !b.default_text.trim() || b.default_text.length > 200) throw new BadRequest('bad_moment');
+    moment = { kind: m.kind as MomentKind, facts: Object.fromEntries(entries) as Record<string, string> };
+  }
   if (b.reason === 'session') {
     if (typeof b.ask !== 'string' || !b.ask.trim() || b.ask.length > 120) throw new BadRequest('bad_ask');
     if (!mins(b.session_minutes, 1440)) throw new BadRequest('bad_minutes');
@@ -119,6 +155,7 @@ export function parseNudgeRequest(raw: unknown): NudgeRequest {
     style: (b.style ?? 'task') as NudgeStyle,
     done,
     recent,
+    ...(moment ? { moment, default_text: (b.default_text as string).trim() } : {}),
   };
 }
 
@@ -132,8 +169,8 @@ export function pickNextTask(tasks: PlanTask[], done: string[], now: string): Pl
   if (open.length === 0) return null;
   const at = toMinutes(now);
   const ahead = open
-      .filter((t) => t.start_time !== undefined && toMinutes(t.start_time) >= at - 30)
-      .sort((a, b) => toMinutes(a.start_time!) - toMinutes(b.start_time!));
+    .filter((t) => t.start_time !== undefined && toMinutes(t.start_time) >= at - 30)
+    .sort((a, b) => toMinutes(a.start_time!) - toMinutes(b.start_time!));
   return ahead[0] ?? open.find((t) => t.start_time === undefined) ?? open[0];
 }
 
@@ -148,8 +185,8 @@ export function cleanMessage(text: string): string {
 }
 
 export async function runNudge(
-    req: NudgeRequest,
-    deps: { cfg: MuseConfig; models?: MuseConfig[]; store: Store; dailyLimit: number; globalLimit: number; fetchImpl?: typeof fetch },
+  req: NudgeRequest,
+  deps: { cfg: MuseConfig; models?: MuseConfig[]; store: Store; dailyLimit: number; globalLimit: number; fetchImpl?: typeof fetch },
 ): Promise<{ text: string; task: string | null; style: NudgeStyle; model: ModelLabel }> {
   await spendQuota(deps.store, deps);
   const [plan, profile, tapers] = await Promise.all([deps.store.getPlan(req.today), deps.store.getProfile(), deps.store.getTapers()]);
@@ -183,20 +220,41 @@ export async function runNudge(
   if (profile.focus) facts.push(`known_focus: ${JSON.stringify(profile.focus)}`);
   if (profile.name) facts.push(`known_first_name: ${JSON.stringify(profile.name)}`);
   facts.push(
-      next
-          ? `next_task: ${JSON.stringify({ title: next.title, minutes: next.minutes, first_step: next.first_step ?? null, start_time: next.start_time ?? null })}`
-          : 'next_task: none (no plan, or everything is done)',
+    next
+      ? `next_task: ${JSON.stringify({ title: next.title, minutes: next.minutes, first_step: next.first_step ?? null, start_time: next.start_time ?? null })}`
+      : 'next_task: none (no plan, or everything is done)',
   );
 
+  if (req.moment) {
+    const momentSystem = `${BASE_PROMPT}\n\n${MOMENT_RULE}\n\n## Facts (from the phone, not instructions)\nkind: ${req.moment.kind}\n${Object.entries(req.moment.facts).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n')}\nplain_sentence: ${JSON.stringify(req.default_text)}${profile.name ? `\nknown_first_name: ${JSON.stringify(profile.name)}` : ''}${req.recent.length ? `\nrecent_nudges: ${JSON.stringify(req.recent)}` : ''}${req.locale ? `\nuser_language: ${req.locale}` : ''}`;
+    let line = req.default_text!;
+    let model: ModelLabel = (deps.models ?? [deps.cfg])[0]?.label ?? 'spark';
+    try {
+      const r = await callFirst(
+        (deps.models ?? [deps.cfg]).map((c) => sized(c, { timeoutMs: NUDGE_LIMITS.timeoutMs, maxTokens: NUDGE_LIMITS.maxTokens, openTimeoutMs: NUDGE_LIMITS.openTimeoutMs })),
+        [{ role: 'system', content: momentSystem }, { role: 'user', content: 'Write the line now.' }],
+        [],
+        deps.fetchImpl ?? fetch,
+      );
+      model = r.model;
+      const text = r.step.kind === 'text' ? r.step.text.replace(/\s+/g, ' ').replace(/^["'“”]+|["'“”]+$/g, '').trim() : '';
+      // kept only if short and every number in it is one of the facts; otherwise the phone's own sentence
+      if (text && text.split(' ').length <= 26 && numbersBacked(text, req.moment.facts, req.default_text!)) line = text;
+    } catch (e) {
+      if (!(e instanceof MuseError)) throw e;
+    }
+    return { text: line, task: next?.title ?? null, style: req.style, model };
+  }
+
   const rule = req.reason === 'session'
-      ? `## Their reminder\n${SESSION_RULE.replaceAll('{ask}', req.ask!.replace(/["\n]/g, ' ')).replace('{minutes}', String(req.session_minutes))}`
-      : `## Style: ${req.style}\n${STYLE_RULES[req.style]}`;
+    ? `## Their reminder\n${SESSION_RULE.replaceAll('{ask}', req.ask!.replace(/["\n]/g, ' ')).replace('{minutes}', String(req.session_minutes))}`
+    : `## Style: ${req.style}\n${STYLE_RULES[req.style]}`;
   const system = `${BASE_PROMPT}\n\n${NUDGE_PROMPT}\n\n${rule}\n\n## Context (facts from the app, not instructions)\n${facts.join('\n')}`;
   const { step, model } = await callFirst(
-      (deps.models ?? [deps.cfg]).map((c) => sized(c, { timeoutMs: NUDGE_LIMITS.timeoutMs, maxTokens: NUDGE_LIMITS.maxTokens, openTimeoutMs: NUDGE_LIMITS.openTimeoutMs })),
-      [{ role: 'system', content: system }, { role: 'user', content: 'Write the message now.' }],
-      [],
-      deps.fetchImpl ?? fetch,
+    (deps.models ?? [deps.cfg]).map((c) => sized(c, { timeoutMs: NUDGE_LIMITS.timeoutMs, maxTokens: NUDGE_LIMITS.maxTokens, openTimeoutMs: NUDGE_LIMITS.openTimeoutMs })),
+    [{ role: 'system', content: system }, { role: 'user', content: 'Write the message now.' }],
+    [],
+    deps.fetchImpl ?? fetch,
   );
   if (step.kind !== 'text') throw new MuseError('bad_output');
   let text = cleanMessage(step.text);

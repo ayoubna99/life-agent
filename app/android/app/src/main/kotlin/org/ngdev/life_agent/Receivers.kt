@@ -18,7 +18,9 @@ class AlarmReceiver : BroadcastReceiver() {
             // Keep Life awake for a few seconds while the card is up: some phones pause an app the moment its receiver ends.
             val done = goAsync()
             val store = NativeStore(context)
-            Nudger(context).card(intent.getStringExtra("title") ?: "Lify", message, null, id, open) { how -> store.log("test card shown as $how") }
+            // open "pull" = the test nudge card: exactly like a real nudge, with the Pull me out button
+            val pull = if (open == "pull") "test" else null
+            Nudger(context).card(intent.getStringExtra("title") ?: "Lify", message, null, id, if (pull != null) null else open, pull) { how -> store.log("test card shown as $how") }
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ done.finish() }, 8_000)
         } else {
             Nudger(context).notify(message, id, Nudger.CHANNEL_REMINDER, intent.getStringExtra("title") ?: "Life", Nudger.openPending(context, open))

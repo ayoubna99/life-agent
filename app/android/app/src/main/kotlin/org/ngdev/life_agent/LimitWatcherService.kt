@@ -24,6 +24,10 @@ import org.ngdev.life_agent.core.NudgeTitle
 import org.ngdev.life_agent.core.NudgeBank
 import org.ngdev.life_agent.core.LogicalDay
 import org.ngdev.life_agent.core.Moment
+import org.ngdev.life_agent.core.MomentAction
+import org.ngdev.life_agent.core.MomentKind
+import org.ngdev.life_agent.core.MomentNudge
+import org.ngdev.life_agent.core.Moments
 import org.ngdev.life_agent.core.SessionRules
 import org.ngdev.life_agent.core.OutcomeMeter
 import org.ngdev.life_agent.core.UsageAggregator
@@ -160,14 +164,23 @@ class LimitWatcherService : Service() {
                 store.log("$label: Lify did not answer (${store.lastProblem ?: "?"}), skipped")
             } else if (stillInFront(front)) {
                 store.lastNudgeAt = now
-                nudger.card(NudgeTitle.onApp(minutes, label), answer.text, front, 2500 + (front.hashCode() and 0xFFF), pull = "rule") { how -> store.log("$label: reminder shown as $how") }
+                nudger.card(
+                    NudgeTitle.onApp(minutes, label), answer.text, front, 2500 + (front.hashCode() and 0xFFF),
+                    pull = "rule", actionLabel = "Done", actionOpen = "done",
+                ) { how -> store.log("$label: reminder shown as $how") }
             } else {
                 store.log("$label: you left before it was ready, not shown")
             }
             return 20_000L
         }
 
-        // 2. Daily limits. A rule the user made for THIS app replaces its limit nudges (one voice, not two). A rule for
+        // 2. Moments: a nudge carrying one fact true only for this person, right now (core/Moments.kt).
+        if (rules.none { it.pkg == front }) {
+            val limitMin = limits.firstOrNull { it.pkg == front }?.minutes ?: 0
+            momentNudge(front, events, now, tz, day, hhmm, used, limitMin, sent, limits.map { it.pkg }.toSet(), demo, cal)?.let { return it }
+        }
+
+        // 3. Daily limits. A rule the user made for THIS app replaces its limit nudges (one voice, not two). A rule for
         // any app does not: it counts time in a row, and hours of short sessions would never get a nudge.
         if (rules.any { it.pkg == front }) return idle
         val limit = limits.firstOrNull { it.pkg == front } ?: return idle
@@ -187,6 +200,8 @@ class LimitWatcherService : Service() {
         // and shows its next unseen line at once (no waiting, no network). Without a bank (first day, or every line
         // used): the style bandit, and the agent writes the line live.
         val nextTask = DayRules.importantNext(store.tasks(LogicalDay.today(now, tz)), hhmm)?.title
+        // about 1 in 10 is held back on purpose (no card): what happens without a nudge, for an honest comparison
+        val holdout = !demo && rnd.nextDouble() < Moments.HOLDOUT
         val fromBank = NudgeBank.pick(store.bank(), band, limit.label, store.seenLines(), store.angleStats(), store.angleStats(context), rnd, nextTask)
         val arm: Arm
         val explore: Boolean
@@ -199,6 +214,12 @@ class LimitWatcherService : Service() {
             text = fromBank.text
             store.addSeen(fromBank.line.id)
             store.log("${limit.label}: $used/${limit.minutes} min, ${decision.reason.wire}, bank angle ${fromBank.angle.id}")
+        } else if (holdout) {
+            val pick = ContextualBandit.decide(Arm.values().toList(), store.armStats(), store.armStats(context), rnd, true)
+            arm = pick.arm
+            explore = pick.explore
+            propensity = pick.propensity
+            text = ""
         } else {
             val pick = ContextualBandit.decide(Arm.values().toList(), store.armStats(), store.armStats(context), rnd, true)
             val wire = if (decision.reason == NudgeReason.DEMO) NudgeReason.LIMIT.wire else decision.reason.wire
@@ -222,7 +243,11 @@ class LimitWatcherService : Service() {
         val title = if (event != null) "During ${event.title}" else NudgeTitle.onApp(used, limit.label)
         val shownAt = System.currentTimeMillis()
         val pendingId = UUID.randomUUID().toString()
-        nudger.card(title, text, front, 2000 + (front.hashCode() and 0xFFF), pull = pendingId) { how -> store.log("${limit.label}: nudge shown as $how") }
+        if (holdout) {
+            store.log("${limit.label}: held back on purpose (control group): no card this time")
+        } else {
+            nudger.card(title, text, front, 2000 + (front.hashCode() and 0xFFF), pull = pendingId) { how -> store.log("${limit.label}: nudge shown as $how") }
+        }
         // Always measured on the phone (that is how Lify learns what works); sent to the server only with experiments on.
         store.savePending(
             store.pending() + NativeStore.Pending(
@@ -231,7 +256,7 @@ class LimitWatcherService : Service() {
                 windowMs = if (demo) DemoPolicy.WINDOW_MS else OutcomeMeter.WINDOW_MS,
                 leftWithinMs = if (demo) DemoPolicy.LEFT_WITHIN_MS else OutcomeMeter.LEFT_WITHIN_MS,
                 demo = demo, propensity = propensity, band = band, message = text,
-                angle = fromBank?.angle?.id, lineId = fromBank?.line?.id, task = nextTask,
+                angle = fromBank?.angle?.id, lineId = fromBank?.line?.id, task = nextTask, holdout = holdout,
                 moment = Moment(
                     Moment.dayType(cal.get(Calendar.DAY_OF_WEEK)), Moment.depth(used, limit.minutes),
                     Moment.taskSoon(store.tasks(LogicalDay.today(now, tz)), hhmm), fromBank?.angle?.tone, fromBank?.angle?.topic,
@@ -276,17 +301,24 @@ class LimitWatcherService : Service() {
         val pending = store.pending()
         if (pending.isNotEmpty()) {
             val (due, waiting) = pending.partition { now >= it.atMs + it.windowMs }
+            val feeds = store.limits().map { it.pkg }.toSet()
             if (due.isNotEmpty()) {
                 var stats = store.armStats()
                 val results = due.map { p ->
-                    val o = OutcomeMeter.measure(reader.events(p.atMs - 1000, p.atMs + p.windowMs), p.pkg, p.atMs, p.windowMs, p.leftWithinMs)
-                    stats = Bandit.record(stats, p.arm, o.left)
+                    val o = OutcomeMeter.measure(reader.events(p.atMs - 1000, p.atMs + p.windowMs), p.pkg, p.atMs, p.windowMs, p.leftWithinMs, feeds)
+                    // success = left AND stayed off the feeds (straight back to TikTok is not a success), or tapped the button
+                    val success = o.stayedOff || p.pulled
                     val context = "${p.pkg}|${p.band.wire}"
-                    store.saveArmStats(Bandit.record(store.armStats(context), p.arm, o.left), context)
-                    if (p.angle != null) store.recordAngle(p.angle, o.left || p.pulled, context)
+                    if (!p.holdout) { // the control group only measures; it teaches no idea anything
+                        if (p.angle?.startsWith("moment_") != true) {
+                            stats = Bandit.record(stats, p.arm, success)
+                            store.saveArmStats(Bandit.record(store.armStats(context), p.arm, success), context)
+                        }
+                        if (p.angle != null) store.recordAngle(p.angle, success, context)
+                    }
                     ExperimentResult(
                         p.id, p.day, p.time, p.app, p.arm, p.explore, p.reason, o.left || p.pulled, o.secondsAfter, (p.windowMs / 1000).toInt(), p.demo,
-                        p.propensity, p.band, p.message, p.angle, p.lineId, p.pulled, p.moment,
+                        p.propensity, p.band, p.message, p.angle, p.lineId, p.pulled, p.moment, p.holdout, o.backToFeed,
                     )
                 }
                 store.saveArmStats(stats)
@@ -295,6 +327,89 @@ class LimitWatcherService : Service() {
             }
         }
         if (store.unsent().length() > 0) NudgeClient(store).sendExperiments()
+    }
+
+    private val sessionCache = HashMap<String, Pair<Long, List<Int>>>()
+
+    /** The finished sessions on [pkg] in the last 14 days (minutes), worked out at most once an hour. */
+    private fun pastSessions(pkg: String, now: Long): List<Int> {
+        sessionCache[pkg]?.let { (at, list) -> if (now - at < 60 * 60_000L) return list }
+        val list = runCatching { Moments.sessionLengths(reader.events(now - 14L * 24 * 3600_000L, now), pkg) }.getOrDefault(emptyList())
+        sessionCache[pkg] = now to list
+        return list
+    }
+
+    private var skip: Set<String>? = null
+
+    /** Apps that are not a choice in the "what did you pick the phone up for" sequence: home screens, system UI, Life. */
+    private fun skipPkgs(): Set<String> = skip ?: runCatching {
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        packageManager.queryIntentActivities(home, 0).map { it.activityInfo.packageName }.toSet() + setOf(packageName, "com.android.systemui")
+    }.getOrDefault(setOf(packageName, "com.android.systemui")).also { skip = it }
+
+    /** One moment a day per kind and app (the phone-down one once a night): never the same fact twice. */
+    private fun gateKey(m: MomentNudge, day: String, logicalDay: String, pkg: String) =
+        if (m.kind == MomentKind.PHONE_DOWN) "$day|*|m|phone_down|$logicalDay" else "$day|$pkg|m|${m.kind.wire}"
+
+    /**
+     * Moments (core/Moments.kt). Code works out every fact; Thompson sampling picks which moment; about 1 in 10 is held
+     * back; Muse Spark Open phrases the rest (the server keeps its line only if every number in it is one of the facts).
+     */
+    private fun momentNudge(
+        front: String, events: List<org.ngdev.life_agent.core.UsageEvent>, now: Long, tz: TimeZone, day: String, hhmm: String,
+        used: Int, limitMin: Int, sent: Map<String, Long>, feeds: Set<String>, demo: Boolean, cal: Calendar,
+    ): Long? {
+        if (front !in feeds) return null
+        if (now - store.lastNudgeAt < (if (demo) DemoPolicy.COOLDOWN_MS else NudgePolicy.COOLDOWN_MS)) return null
+        val label = appLabel(front)
+        val today = LogicalDay.today(now, tz)
+        val tasks = store.tasks(today)
+        val next = DayRules.importantNext(tasks, hhmm)
+        val nextAction = next?.let { MomentAction("Open: ${it.title}".take(40), "task:${it.title}") } ?: MomentAction("Pull me out", "pull")
+        val since = OutcomeMeter.sessionSince(events, front)
+        val current = if (since == null) 0 else ((now - since) / 60_000L).toInt()
+        val candidates = listOfNotNull(
+            Moments.lostIntent(events, now, front, feeds, skipPkgs(), ::appLabel, if (demo) 1 else Moments.LOST_AFTER_MIN),
+            Moments.exitPoint(pastSessions(front, now), current, label, nextAction, if (demo) 2 else Moments.MIN_SESSIONS),
+            Moments.plannedNow(tasks, hhmm),
+            Moments.phoneDown(store.eveningSleep, hhmm, store.tasks(LogicalDay.tomorrow(now, tz))),
+        ).filter { demo || gateKey(it, day, today, front) !in sent } // demo mode: as many takes as needed
+        if (candidates.isEmpty()) return null
+        val band = Band.of(cal.get(Calendar.HOUR_OF_DAY))
+        val context = "$front|${band.wire}"
+        val (m, propensity) = Moments.pick(candidates, store.angleStats(), store.angleStats(context), rnd) ?: return null
+        store.saveSent(sent + (gateKey(m, day, today, front) to now))
+        store.lastNudgeAt = now
+        val holdout = !demo && rnd.nextDouble() < Moments.HOLDOUT
+        val pendingId = UUID.randomUUID().toString()
+        var text = m.text
+        if (holdout) {
+            store.log("$label: moment ${m.kind.wire}, held back on purpose (control group)")
+        } else {
+            store.log("$label: moment ${m.kind.wire}: ${m.text}")
+            text = NudgeClient(store).moment(day, hhmm, label, used, m.kind.wire, m.facts, m.text)
+            if (!stillInFront(front)) {
+                store.log("$label: you left before it was ready, not shown")
+                return if (demo) 5_000L else 20_000L
+            }
+            val direct = m.action.open.startsWith("app:") || m.action.open == "done"
+            nudger.card(
+                m.title, text, front, 2700 + (front.hashCode() and 0xFFF), pull = pendingId,
+                actionLabel = m.action.label, actionOpen = if (direct) m.action.open else null,
+            ) { how -> store.log("$label: moment ${m.kind.wire} shown as $how") }
+        }
+        store.savePending(
+            store.pending() + NativeStore.Pending(
+                id = pendingId, pkg = front, app = label, arm = Arm.GOAL, explore = false,
+                reason = NudgeReason.MOMENT, atMs = System.currentTimeMillis(), day = day, time = hhmm,
+                windowMs = if (demo) DemoPolicy.WINDOW_MS else OutcomeMeter.WINDOW_MS,
+                leftWithinMs = if (demo) DemoPolicy.LEFT_WITHIN_MS else OutcomeMeter.LEFT_WITHIN_MS,
+                demo = demo, propensity = propensity, band = band, message = text, angle = m.kind.key,
+                task = if (m.action.open.startsWith("task:")) m.action.open.removePrefix("task:") else null, holdout = holdout,
+                moment = Moment(Moment.dayType(cal.get(Calendar.DAY_OF_WEEK)), Moment.depth(used, maxOf(limitMin, 1)), next != null, null, null),
+            ),
+        )
+        return if (demo) 5_000L else 20_000L
     }
 
     /** Whether [pkg] is still the app in front (checked again after waiting for the agent). */

@@ -449,3 +449,38 @@ test('a live nudge is one short line that never repeats the last ones and skips 
   assert.doesNotMatch(sys, /next_task: .*Drink water/);
   assert.throws(() => parseNudgeRequest({ ...nudgeBody, recent: 'x' }));
 });
+
+test('a reminder that drifts off what they asked is replaced by their own words', async () => {
+  const store = new MemoryStore();
+  store.profile = { apps: [], focus: 'my thesis' };
+  const net = fakeNet([textReply('Your thesis is waiting. Close TikTok.')]);
+  const req = parseNudgeRequest({ ...nudgeBody, reason: 'session', ask: 'do 10 push-ups', session_minutes: 60 });
+  const out = await runNudge(req, { cfg, store, dailyLimit: 80, globalLimit: 1000, fetchImpl: net.fetchImpl });
+  assert.equal(out.text, 'Time for: do 10 push-ups.');
+  const sys = net.museRequests[0].messages[0].content!;
+  assert.match(sys, /THIS REMINDER IS THE WHOLE MESSAGE: say clearly what they asked \("do 10 push-ups"\)/);
+  const { mentionsAsk } = await import('../supabase/functions/_shared/nudge.ts');
+  assert.ok(mentionsAsk('An hour in. Drop and give me 10, push-ups time.', 'do 10 push-ups'));
+  assert.ok(!mentionsAsk('Your thesis is waiting.', 'do 10 push-ups'));
+});
+
+test('a moment: Muse phrases the facts the phone computed, and a line with an invented number is not used', async () => {
+  const store = new MemoryStore();
+  store.profile = { apps: ['TikTok'], name: 'Ayoub' };
+  const moment = { kind: 'lost_intent', facts: { opened_for: 'WhatsApp', minutes_since_unlock: '14', since_then: 'Instagram, then TikTok' } };
+  const plain = 'You picked up your phone for WhatsApp 14 minutes ago. Since then: Instagram, then TikTok.';
+  const good = fakeNet([textReply('14 minutes ago you came for WhatsApp. Instagram, then TikTok happened.')]);
+  const req = parseNudgeRequest({ ...nudgeBody, reason: 'moment', moment, default_text: plain });
+  const out = await runNudge(req, { cfg, store, dailyLimit: 80, globalLimit: 1000, fetchImpl: good.fetchImpl });
+  assert.equal(out.text, '14 minutes ago you came for WhatsApp. Instagram, then TikTok happened.');
+  const sys = good.museRequests[0].messages[0].content!;
+  assert.match(sys, /every number and time in your line must be one of the facts/);
+  assert.match(sys, /Be creative/);
+  assert.match(sys, /minutes_since_unlock: "14"/);
+  // the model made up "40 minutes": the phone's own sentence is used instead
+  const bad = fakeNet([textReply('40 minutes of TikTok after WhatsApp. Stop.')]);
+  const out2 = await runNudge(parseNudgeRequest({ ...nudgeBody, reason: 'moment', moment, default_text: plain }), { cfg, store, dailyLimit: 80, globalLimit: 1000, fetchImpl: bad.fetchImpl });
+  assert.equal(out2.text, plain);
+  assert.throws(() => parseNudgeRequest({ ...nudgeBody, reason: 'moment', moment: { kind: 'made_up', facts: { a: '1' } }, default_text: 'x' }));
+  assert.throws(() => parseNudgeRequest({ ...nudgeBody, reason: 'moment', moment }));
+});

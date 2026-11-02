@@ -75,6 +75,30 @@ class NudgeClient(private val store: NativeStore) {
         }
     }
 
+    /**
+     * A moment's line: Muse Spark Open phrases the facts code computed (the server keeps a line only if every number in
+     * it is one of the facts). [defaultText] is the same facts as a plain sentence: used when the agent cannot be reached.
+     */
+    fun moment(day: String, nowHHmm: String, app: String, used: Int, kind: String, facts: Map<String, String>, defaultText: String): String {
+        val base = store.baseUrl ?: return defaultText
+        val key = store.apiKey ?: return defaultText
+        val token = freshToken(base, key) ?: return defaultText
+        val f = JSONObject()
+        for ((k, v) in facts) f.put(k, v.take(150))
+        val body = JSONObject()
+            .put("action", "nudge").put("today", day).put("now", nowHHmm).put("app", app.take(60)).put("used_minutes", used)
+            .put("reason", "moment").put("locale", store.locale)
+            .put("moment", JSONObject().put("kind", kind).put("facts", f))
+            .put("default_text", defaultText.take(200))
+            .put("recent", JSONArray(store.recentNudges().filter { it.isNotBlank() }.distinct().takeLast(5)))
+        return try {
+            val (status, text) = post("$base/functions/v1/agent", key, token, body.toString(), NUDGE_WAIT_MS)
+            if (status == 200) JSONObject(text).optString("text").ifBlank { defaultText } else defaultText
+        } catch (e: Exception) {
+            defaultText
+        }
+    }
+
     /** The evening reminder's words: null when tomorrow is already planned or the agent cannot be reached (tried twice). */
     fun evening(today: String, tomorrow: String, nowHHmm: String): String? {
         for (attempt in 1..2) {

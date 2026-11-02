@@ -247,6 +247,7 @@ const STUDY_PROMPT = `You are Lify's night shift: a scientist whose only subject
 
 Read the whole history below. Scrolling has different causes at different moments (TikTok at night is not TikTok in the morning, a weekday is not a weekend, just opened is not way over the limit, before an important task is avoidance): look for what works WHERE.
 1. THEORIES. Each theory is a testable claim: "in these moments (when), nudges with this property (test) get them off the app more than the other nudges in the same moments". CODE will test every theory on the real results and set its status and confidence; yours are only your guess. Look at the verdicts code computed for last time's theories: keep the ones still worth testing, drop the rejected ones, propose new ones where the data suggests something. At most 8. Never about health.
+   Write each theory in plain words, never with {task} or {app} (those are only for lines).
    when: any of apps (names), bands (morning, afternoon, evening, night), day_type (weekday, weekend), depth (near, just_over, way_over, session), task_soon (true/false). Leave out what does not matter.
    test: one or more of tone (blunt, playful, question, dare, calm), topic (task, goal, sleep, cost, plan, other), style (task, cost, goal), angle (an angle id).
 2. ANGLES. An angle is the idea behind a nudge (for example "blunt, about tomorrow's gym, at night"). Give each a short id (lowercase, underscores), a name, a style ("task" = their next important task, "cost" = what the time costs them, "goal" = their own goal or why), a tone and a topic (same values as above), the time-of-day bands where it fits and optionally the apps. Design angles that TEST your theories (one that matches the theory and one that does not, in the same moments). Keep the angles that work and give them MORE lines; add 1 or 2 new ones; drop the ones that failed. At most 8 angles. With little data, lean on these starting assumptions about most people: STARTING.
@@ -262,6 +263,10 @@ Read the whole history below. Scrolling has different causes at different moment
      nights. Name those tasks often: that is what makes a line theirs. Never invent or recall a task, hobby or activity
      that is not in that plan. If that day has no plan yet, write {task} where a task goes: the phone puts in their
      real next important task at that moment (a line with {task} is only shown when there is one).
+   The phone also has MOMENTS, nudges built from one fact true only for this person right now (ids moment_lost_intent:
+   "you picked up your phone for X, since then feeds"; moment_exit_point: "you usually leave around minute N";
+   moment_planned_now: "you planned T for this time"; moment_phone_down: "you said phone down at H"). Their results are in
+   the history like any idea: write theories about them (test.angle) but no lines for them.
 4. NOTES: two sentences on what you learned tonight.
 
 Answer with JSON only:

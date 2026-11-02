@@ -105,7 +105,10 @@ class Nudger(context: Context) {
      * phone does not draw it within [DRAW_WAIT_MS] (some phones hold back windows from apps in the background), it
      * becomes a heads-up notification instead, so the words always arrive. [done] hears "card" or "notification".
      */
-    fun card(title: String, text: String, appPkg: String?, id: Int, open: String? = null, pull: String? = null, done: ((String) -> Unit)? = null) {
+    fun card(
+        title: String, text: String, appPkg: String?, id: Int, open: String? = null, pull: String? = null,
+        actionLabel: String? = null, actionOpen: String? = null, done: ((String) -> Unit)? = null,
+    ) {
         val fallback = {
             notify(text, id, CHANNEL_NUDGE, title, openPending(ctx, open), pull)
             done?.invoke("notification")
@@ -115,7 +118,7 @@ class Nudger(context: Context) {
             return
         }
         main.post {
-            val view = runCatching { showCard(title, text, appPkg, open, pull) }.getOrNull()
+            val view = runCatching { showCard(title, text, appPkg, open, pull, actionLabel, actionOpen) }.getOrNull()
             if (view == null) {
                 fallback()
                 return@post
@@ -173,7 +176,7 @@ class Nudger(context: Context) {
 
     private fun dp(v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
 
-    private fun showCard(title: String, text: String, appPkg: String?, open: String?, pull: String?): View {
+    private fun showCard(title: String, text: String, appPkg: String?, open: String?, pull: String?, actionLabel: String? = null, actionOpen: String? = null): View {
         val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         overlay?.let { runCatching { wm.removeView(it) } }
 
@@ -230,7 +233,7 @@ class Nudger(context: Context) {
         var pullButton: TextView? = null
         if (pull != null) {
             pullButton = TextView(ctx).apply {
-                this.text = "Pull me out"
+                this.text = actionLabel ?: "Pull me out"
                 setTextColor(0xFF1B1530.toInt())
                 textSize = 14f
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
@@ -270,7 +273,16 @@ class Nudger(context: Context) {
         }
         pullButton?.setOnClickListener {
             close()
-            runCatching { openPending(ctx, "pull:$pull").send() }
+            when {
+                // back to the app they picked the phone up for
+                actionOpen != null && actionOpen.startsWith("app:") -> runCatching {
+                    NativeStore(ctx).markPulled(pull!!)
+                    ctx.startActivity(ctx.packageManager.getLaunchIntentForPackage(actionOpen.removePrefix("app:"))!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+                // "Done" (their own reminder, done for tonight): counted, nothing opens
+                actionOpen == "done" -> runCatching { NativeStore(ctx).markPulled(pull!!) }
+                else -> runCatching { openPending(ctx, "pull:$pull").send() }
+            }
         }
         countdown.addListener(object : android.animation.AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: android.animation.Animator) = close()

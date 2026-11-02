@@ -17,8 +17,8 @@ export const ARM_LABEL: Record<Arm, string> = {
   goal: 'nudges with your own goal',
 };
 
-export type HitReason = 'approaching' | 'limit' | 'over' | 'event' | 'demo';
-const REASONS: readonly HitReason[] = ['approaching', 'limit', 'over', 'event', 'demo'];
+export type HitReason = 'approaching' | 'limit' | 'over' | 'event' | 'demo' | 'moment';
+const REASONS: readonly HitReason[] = ['approaching', 'limit', 'over', 'event', 'demo', 'moment'];
 
 export interface ExperimentEvent {
   id: string; // made on the phone, so a retried upload is stored once
@@ -50,6 +50,10 @@ export interface ExperimentEvent {
   /** The tone and topic of the night shift's idea that was used. */
   tone?: Tone;
   topic?: Topic;
+  /** Held back on purpose (no card): the control group. */
+  holdout?: boolean;
+  /** Left, but opened a feed again within 10 minutes: not a success. */
+  back_to_feed?: boolean;
 }
 
 export type DayType = 'weekday' | 'weekend';
@@ -93,7 +97,9 @@ export function parseExperimentLog(raw: unknown): ExperimentEvent[] {
       (r.depth === undefined || DEPTHS.includes(r.depth as Depth)) &&
       (r.task_soon === undefined || typeof r.task_soon === 'boolean') &&
       (r.tone === undefined || TONES.includes(r.tone as Tone)) &&
-      (r.topic === undefined || TOPICS.includes(r.topic as Topic));
+      (r.topic === undefined || TOPICS.includes(r.topic as Topic)) &&
+      (r.holdout === undefined || typeof r.holdout === 'boolean') &&
+      (r.back_to_feed === undefined || typeof r.back_to_feed === 'boolean');
     if (!ok) throw new BadRequest('bad_experiments');
     seen.add(r.id as string);
     return {
@@ -119,6 +125,8 @@ export function parseExperimentLog(raw: unknown): ExperimentEvent[] {
       ...(typeof r.task_soon === 'boolean' ? { task_soon: r.task_soon } : {}),
       ...(r.tone !== undefined ? { tone: r.tone as Tone } : {}),
       ...(r.topic !== undefined ? { topic: r.topic as Topic } : {}),
+      ...(r.holdout === true ? { holdout: true } : {}),
+      ...(r.back_to_feed === true ? { back_to_feed: true } : {}),
     };
   });
 }
@@ -152,6 +160,8 @@ export interface ExperimentSummary {
   log: LogEntry[];
   /** Per night-shift angle: how often its lines made the user leave, and how many different lines were used. */
   angles: AngleResult[];
+  /** With a nudge vs the control group (held back on purpose): how often they left and stayed off the feeds. */
+  control: ControlResult | null;
   note: string;
 }
 
@@ -180,6 +190,30 @@ export interface ContextResult {
   leading: Arm | null;
 }
 
+export interface ControlResult {
+  nudged: { tried: number; stayed_off: number };
+  without: { tried: number; stayed_off: number };
+  /** The nudged rate minus the control rate, and P(the nudges really do better), from Beta posteriors. */
+  lift: number | null;
+  prob_better: number | null;
+}
+
+/** Left the app and did not come straight back to a feed. */
+export const stayedOff = (e: ExperimentEvent) => e.left && !e.back_to_feed;
+
+/** The honest comparison: nudges vs the moments held back on purpose (demo mode left out). */
+export function controlResult(events: ExperimentEvent[]): ControlResult | null {
+  const real = events.filter((e) => !e.demo);
+  const without = real.filter((e) => e.holdout);
+  const nudged = real.filter((e) => !e.holdout);
+  if (without.length === 0) return null;
+  const n = { tried: nudged.length, stayed_off: nudged.filter(stayedOff).length };
+  const w = { tried: without.length, stayed_off: without.filter(stayedOff).length };
+  const rate = (c: { tried: number; stayed_off: number }) => (c.tried ? c.stayed_off / c.tried : 0);
+  const p = probabilityBest([{ tried: n.tried, left: n.stayed_off }, { tried: w.tried, left: w.stayed_off }])[0];
+  return { nudged: n, without: w, lift: n.tried ? Math.round((rate(n) - rate(w)) * 100) / 100 : null, prob_better: p };
+}
+
 export interface AngleResult {
   angle: string;
   tried: number;
@@ -200,6 +234,8 @@ export interface LogEntry {
   message: string | null;
   angle: string | null;
   pulled: boolean;
+  holdout: boolean;
+  back_to_feed: boolean;
   left: boolean;
   minutes_after: number;
   demo: boolean;
@@ -266,8 +302,10 @@ export function probabilityBest(stats: { tried: number; left: number }[], draws 
 }
 
 export function summarizeExperiments(events: ExperimentEvent[]): ExperimentSummary {
+  // the style test only counts nudges that were shown and written in a style (not the control group, not moments)
+  const styled = events.filter((e) => !e.holdout && e.reason !== 'moment');
   const counted = ARMS.map((arm) => {
-    const mine = events.filter((e) => e.arm === arm);
+    const mine = styled.filter((e) => e.arm === arm);
     return { arm, mine, tried: mine.length, left: mine.filter((e) => e.left).length };
   });
   const probs = probabilityBest(counted);
@@ -295,7 +333,7 @@ export function summarizeExperiments(events: ExperimentEvent[]): ExperimentSumma
     hours.set(h, (hours.get(h) ?? 0) + 1);
   }
   const days = new Set(events.map((e) => e.day)).size;
-  const policy = evaluatePolicy(events);
+  const policy = evaluatePolicy(styled);
   return {
     events: events.length,
     days,
@@ -305,8 +343,9 @@ export function summarizeExperiments(events: ExperimentEvent[]): ExperimentSumma
     by_app: [...apps.values()].sort((a, b) => b.hits - a.hits).slice(0, 8),
     hits_by_hour: [...hours].map(([hour, hits]) => ({ hour, hits })).sort((a, b) => b.hits - a.hits || a.hour.localeCompare(b.hour)).slice(0, 6),
     policy,
-    contexts: contextResults(events),
-    angles: angleResults(events),
+    contexts: contextResults(styled),
+    angles: angleResults(events.filter((e) => !e.holdout)),
+    control: controlResult(events),
     log: [...events].reverse().slice(0, EXPERIMENT_LIMITS.logSize).map((e) => ({
       day: e.day,
       time: e.time,
@@ -319,6 +358,8 @@ export function summarizeExperiments(events: ExperimentEvent[]): ExperimentSumma
       message: e.message ?? null,
       angle: e.angle ?? null,
       pulled: e.pulled === true,
+      holdout: e.holdout === true,
+      back_to_feed: e.back_to_feed === true,
       left: e.left,
       minutes_after: Math.round(e.seconds_after / 6) / 10,
       demo: e.demo,

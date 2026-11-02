@@ -235,6 +235,8 @@ class NativeStore(context: Context) {
         val moment: Moment? = null,
         /** The task "Pull me out" opens: the one the line was about, or the next important one. */
         val task: String? = null,
+        /** Held back on purpose (no card shown): the control group. */
+        val holdout: Boolean = false,
     )
 
     fun pending(): List<Pending> = try {
@@ -248,6 +250,7 @@ class NativeStore(context: Context) {
                 it.optString("angle").takeIf { a -> a.isNotEmpty() }, it.optString("line").takeIf { l -> l.isNotEmpty() }, it.optBoolean("pulled", false),
                 it.optJSONObject("moment")?.let { m -> Moment(m.getString("dayType"), m.getString("depth"), m.getBoolean("taskSoon"), m.optString("tone").ifEmpty { null }, m.optString("topic").ifEmpty { null }) },
                 it.optString("task").ifEmpty { null },
+                it.optBoolean("holdout", false),
             )
         }
     } catch (e: Exception) {
@@ -262,7 +265,7 @@ class NativeStore(context: Context) {
                     .put("reason", p.reason.wire).put("at", p.atMs).put("day", p.day).put("time", p.time).put("window", p.windowMs)
                     .put("leftWithin", p.leftWithinMs).put("demo", p.demo)
                     .put("propensity", p.propensity).put("band", p.band.wire).put("message", p.message)
-                    .put("angle", p.angle ?: "").put("line", p.lineId ?: "").put("pulled", p.pulled).put("task", p.task ?: "")
+                    .put("angle", p.angle ?: "").put("line", p.lineId ?: "").put("pulled", p.pulled).put("task", p.task ?: "").put("holdout", p.holdout)
                     .apply {
                         p.moment?.let { m ->
                             put("moment", JSONObject().put("dayType", m.dayType).put("depth", m.depth).put("taskSoon", m.taskSoon).put("tone", m.tone ?: "").put("topic", m.topic ?: ""))
@@ -288,6 +291,8 @@ class NativeStore(context: Context) {
                         if (r.angle != null) put("angle", r.angle)
                         if (r.lineId != null) put("line_id", r.lineId)
                         if (r.pulled) put("pulled", true)
+                        if (r.holdout) put("holdout", true)
+                        if (r.backToFeed) put("back_to_feed", true)
                         r.moment?.let { m ->
                             put("day_type", m.dayType).put("depth", m.depth).put("task_soon", m.taskSoon)
                             if (m.tone != null) put("tone", m.tone)

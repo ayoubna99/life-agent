@@ -416,6 +416,7 @@ class ExperimentResults {
     this.policy,
     this.contexts = const [],
     this.log = const [],
+    this.control,
   });
 
   final int events;
@@ -427,6 +428,9 @@ class ExperimentResults {
   final PolicyEvaluation? policy;
   final List<ContextResult> contexts;
   final List<LabEntry> log;
+
+  /// With a nudge vs held back on purpose (the control group), or null before there is a control group.
+  final ControlResult? control;
 
   String labelOf(String arm) =>
       arms.where((a) => a.arm == arm).firstOrNull?.label ?? arm;
@@ -445,6 +449,11 @@ class ExperimentResults {
             (a as Map)['app'] as String,
         ],
         demoEvents: (j['demo_events'] as num?)?.toInt() ?? 0,
+        control: j['control'] is Map
+            ? ControlResult.fromJson(
+                Map<String, Object?>.from(j['control'] as Map),
+              )
+            : null,
         policy: j['policy'] is Map
             ? PolicyEvaluation.fromJson(
                 Map<String, Object?>.from(j['policy'] as Map),
@@ -560,6 +569,8 @@ class LabEntry {
     this.demo = false,
     this.angle,
     this.pulled = false,
+    this.holdout = false,
+    this.backToFeed = false,
   });
 
   /// The night shift's angle this line came from (null: written live).
@@ -567,6 +578,12 @@ class LabEntry {
 
   /// The user tapped "Pull me out".
   final bool pulled;
+
+  /// Held back on purpose (no card): the control group.
+  final bool holdout;
+
+  /// Left, then opened a feed again within 10 minutes.
+  final bool backToFeed;
 
   final String day;
   final String time;
@@ -593,6 +610,8 @@ class LabEntry {
     message: j['message'] as String?,
     angle: j['angle'] as String?,
     pulled: j['pulled'] == true,
+    holdout: j['holdout'] == true,
+    backToFeed: j['back_to_feed'] == true,
     left: j['left'] == true,
     minutesAfter: (j['minutes_after'] as num?)?.toDouble() ?? 0,
     demo: j['demo'] == true,
@@ -835,4 +854,33 @@ String minutesText(int m) {
   final h = m ~/ 60;
   final r = m % 60;
   return h == 0 ? '$r min' : (r == 0 ? '$h h' : '$h h $r');
+}
+
+/// The honest comparison: how often they left and stayed off the feeds with a nudge, and without one.
+class ControlResult {
+  const ControlResult({
+    required this.nudgedTried,
+    required this.nudgedOff,
+    required this.withoutTried,
+    required this.withoutOff,
+    this.probBetter,
+  });
+
+  final int nudgedTried;
+  final int nudgedOff;
+  final int withoutTried;
+  final int withoutOff;
+  final double? probBetter;
+
+  factory ControlResult.fromJson(Map<String, Object?> j) {
+    final n = j['nudged'] as Map;
+    final w = j['without'] as Map;
+    return ControlResult(
+      nudgedTried: (n['tried'] as num).toInt(),
+      nudgedOff: (n['stayed_off'] as num).toInt(),
+      withoutTried: (w['tried'] as num).toInt(),
+      withoutOff: (w['stayed_off'] as num).toInt(),
+      probBetter: (j['prob_better'] as num?)?.toDouble(),
+    );
+  }
 }

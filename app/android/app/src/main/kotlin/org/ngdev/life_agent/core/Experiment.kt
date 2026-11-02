@@ -123,8 +123,14 @@ object Beta {
     }
 }
 
-/** What happened after an intervention. */
-data class Outcome(val left: Boolean, val secondsAfter: Int)
+/**
+ * What happened after an intervention. [backToFeed]: after leaving, they opened this app or another feed within
+ * [OutcomeMeter.BACK_WITHIN_MS] again. Leaving only to come straight back is not a success.
+ */
+data class Outcome(val left: Boolean, val secondsAfter: Int, val backToFeed: Boolean = false) {
+    /** Left, and stayed off the feeds: what the learning rewards. */
+    val stayedOff: Boolean get() = left && !backToFeed
+}
 
 object OutcomeMeter {
     /** Normal windows: did they leave within 2 minutes, and how long were they in the app in the next 15. */
@@ -135,7 +141,10 @@ object OutcomeMeter {
      * [pkg] was in front at [atMs] (that is when the limit was hit). Counts its foreground time in [atMs, atMs + windowMs]
      * from the usage events, and whether it left the front within [leftWithinMs].
      */
-    fun measure(events: List<UsageEvent>, pkg: String, atMs: Long, windowMs: Long, leftWithinMs: Long): Outcome {
+    /** Coming back to a feed this soon after leaving counts as not having left. */
+    const val BACK_WITHIN_MS = 10L * 60 * 1000
+
+    fun measure(events: List<UsageEvent>, pkg: String, atMs: Long, windowMs: Long, leftWithinMs: Long, feeds: Set<String> = setOf(pkg)): Outcome {
         val end = atMs + windowMs
         var inFront = true
         var since = atMs
@@ -160,7 +169,11 @@ object OutcomeMeter {
         }
         if (inFront) total += end - since
         val left = firstLeave != null && firstLeave!! - atMs <= leftWithinMs
-        return Outcome(left, (total / 1000).toInt().coerceIn(0, (windowMs / 1000).toInt()))
+        val back = left && events.any {
+            it.type == UsageEventType.FOREGROUND && (it.pkg in feeds || it.pkg == pkg) &&
+                it.timeMs > firstLeave!! && it.timeMs <= firstLeave!! + BACK_WITHIN_MS
+        }
+        return Outcome(left, (total / 1000).toInt().coerceIn(0, (windowMs / 1000).toInt()), back)
     }
 
     /** A break shorter than this (the screen went off, a quick look at a message) does not end a session. */
@@ -245,6 +258,9 @@ data class ExperimentResult(
     val lineId: String? = null,
     val pulled: Boolean = false,
     val moment: Moment? = null,
+    /** Held back on purpose: no card was shown (the control group). */
+    val holdout: Boolean = false,
+    val backToFeed: Boolean = false,
 )
 
 /**

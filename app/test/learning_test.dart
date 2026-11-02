@@ -287,7 +287,7 @@ void main() {
       expect(find.textContaining('you left 7 of 9 times'), findsOneWidget);
       expect(find.text('left 3 of 8 · 5% likely best'), findsOneWidget);
       expect(find.text('Early signal'), findsOneWidget);
-      expect(find.textContaining('one person'), findsOneWidget);
+      expect(find.textContaining('limit hits over'), findsOneWidget);
       expect(
         find.textContaining('Life\'s choices: you left 64% of the time'),
         findsOneWidget,

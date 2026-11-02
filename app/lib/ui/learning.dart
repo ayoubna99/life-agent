@@ -172,6 +172,15 @@ class ExperimentCard extends StatelessWidget {
                 best: a.arm == r.best,
                 maxTried: maxTried == 0 ? 1 : maxTried,
               ),
+            if (r.control != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'With a nudge you left and stayed off ${r.control!.nudgedOff} of ${r.control!.nudgedTried} times. '
+                'Held back on purpose: ${r.control!.withoutOff} of ${r.control!.withoutTried}.',
+                key: const Key('control-line'),
+                style: t.bodyMedium?.copyWith(color: Brand.cream),
+              ),
+            ],
             if (r.policy != null) ...[
               const SizedBox(height: 4),
               PolicyLine(policy: r.policy!, labelOf: r.labelOf),
@@ -205,8 +214,7 @@ class ExperimentCard extends StatelessWidget {
               ),
             const SizedBox(height: 6),
             Text(
-              '${r.events} limit hit${r.events == 1 ? '' : 's'} over ${r.days} day${r.days == 1 ? '' : 's'}, one person. '
-              'Not proof, and no health claims.${r.demoEvents > 0 ? ' ${r.demoEvents} from demo mode.' : ''}',
+              '${r.events} limit hit${r.events == 1 ? '' : 's'} over ${r.days} day${r.days == 1 ? '' : 's'}.',
               style: t.bodySmall?.copyWith(
                 color: Brand.peach.withValues(alpha: 0.8),
               ),
@@ -372,6 +380,16 @@ class LabNotebookPage extends StatelessWidget {
                   'and goal. Your phone measures whether you left within 2 minutes, and the belief updates.',
                   style: t.bodyMedium?.copyWith(color: Brand.peach),
                 ),
+                if (r.control != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'About 1 in 10 moments is held back on purpose to see what you do without a nudge. '
+                    'With a nudge you left and stayed off ${r.control!.nudgedOff} of ${r.control!.nudgedTried} times; '
+                    'held back: ${r.control!.withoutOff} of ${r.control!.withoutTried}.',
+                    key: const Key('lab-control'),
+                    style: t.bodyMedium?.copyWith(color: Brand.cream),
+                  ),
+                ],
                 if (r.policy != null) ...[
                   const SizedBox(height: 12),
                   PolicyLine(policy: r.policy!, labelOf: r.labelOf),
@@ -437,7 +455,11 @@ class _LabTile extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            e.angle != null
+            e.holdout
+                ? 'Held back on purpose (control group)'
+                : e.angle != null && e.angle!.startsWith('moment_')
+                ? 'Moment: ${e.angle!.substring(7).replaceAll('_', ' ')}'
+                : e.angle != null
                 ? 'Angle: ${e.angle!.replaceAll('_', ' ')}'
                 : e.label[0].toUpperCase() + e.label.substring(1),
             style: t.titleSmall,
@@ -474,8 +496,14 @@ class _LabTile extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  e.pulled
-                      ? 'You tapped Pull me out. This idea comes back, in new words.'
+                  e.holdout
+                      ? (e.left
+                            ? 'No card this time, and you left anyway. This is how Life measures what the nudges really add.'
+                            : 'No card this time, and you stayed $mins. This is how Life measures what the nudges really add.')
+                      : e.pulled
+                      ? 'You tapped the button. This idea comes back, in new words.'
+                      : e.left && e.backToFeed
+                      ? 'You left, then went back to a feed within 10 minutes: that does not count.'
                       : e.left
                       ? 'You left the app. This idea gets picked more here.'
                       : 'You stayed $mins. This idea gets picked less here; trying others.',
@@ -870,7 +898,9 @@ class _TheoryLine extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                theory.statement,
+                theory.statement
+                    .replaceAll('{task}', 'the next task')
+                    .replaceAll('{app}', 'the app'),
                 style: t.bodyLarge?.copyWith(color: color),
               ),
             ),
@@ -885,7 +915,13 @@ class _TheoryLine extends StatelessWidget {
             'Checked on your data: ${theory.evidence}',
             style: t.bodySmall?.copyWith(color: dark ? Brand.peach : null),
           ),
-        if (theory.isNew || theory.beforeStatus != null)
+        // only when something moved since last night (an unchanged verdict reads as frozen)
+        if (theory.isNew ||
+            (theory.beforeStatus != null &&
+                (theory.beforeStatus != theory.status ||
+                    ((theory.beforeConfidence ?? 0) - theory.confidence)
+                            .abs() >=
+                        0.01)))
           Text(
             theory.isNew
                 ? 'New tonight'
@@ -943,10 +979,9 @@ class NightShiftPage extends StatelessWidget {
             ),
             child: Text(
               'Every night Muse Spark Open reads your whole history at once: every nudge, what you did next, your nights '
-              'and plans. It proposes theories about what gets you off your phone, and when. It cannot grade them: code '
-              'checks each one on your real results (the moments it is about, with the theory vs without) and gives the '
-              'chance it is true. Then it writes tomorrow\'s lines to test them; a second pass, your inner skeptic, cuts '
-              'the weak ones. During the day your phone picks the idea that works best for you right now and shows a line '
+              'and plans. It proposes theories about what gets you off your phone, and when, and checks each one on your '
+              'real results (the moments it is about, with it vs without) to get the chance it is true. Then it writes '
+              'tomorrow\'s lines to test them; a second pass, your inner skeptic, cuts the weak ones. During the day your phone picks the idea that works best for you right now and shows a line '
               'you have never seen.',
               style: t.bodyMedium?.copyWith(color: Brand.peach),
             ),
@@ -959,7 +994,7 @@ class NightShiftPage extends StatelessWidget {
                   'Written ${s.writtenAt!.day}/${s.writtenAt!.month} at ${s.writtenAt!.hour.toString().padLeft(2, '0')}:${s.writtenAt!.minute.toString().padLeft(2, '0')} by Muse Spark Open',
                 if (s.readNudges != null)
                   'after reading ${s.readNudges} nudges and ${s.readNights ?? 0} nights in one request',
-                'verdicts recomputed by code on every open',
+                'checked again on your latest results every time you open it',
               ].join(', '),
               key: const Key('night-provenance'),
               style: t.bodySmall,
@@ -1128,7 +1163,7 @@ class TaperCard extends StatelessWidget {
             Text(
               p.days == 0
                   ? 'New target today'
-                  : 'Hit ${p.met} of the last ${p.days} days',
+                  : 'Hit ${p.met} of the last ${p.days} day${p.days == 1 ? '' : 's'}',
               style: t.bodySmall,
             ),
             if (p.trade != null)

@@ -80,7 +80,7 @@ test('the lab notebook lists the newest nudges first with their words, why they 
   ]);
   assert.deepEqual(s.log[0], {
     day: '2026-10-29', time: '21:30', app: 'TikTok', band: 'night', arm: 'cost', label: 'nudges with what the time costs',
-    explore: true, propensity: 0.21, message: 'That is 2 hours of TikTok.', angle: null, pulled: false, left: true, minutes_after: 0.3, demo: false,
+    explore: true, propensity: 0.21, message: 'That is 2 hours of TikTok.', angle: null, pulled: false, holdout: false, back_to_feed: false, left: true, minutes_after: 0.3, demo: false,
   });
   assert.equal(s.log[1].minutes_after, 9);
 });
@@ -93,4 +93,19 @@ test('the phone log may carry the propensity, the moment and the message, and th
   for (const bad of [{ propensity: 0 }, { propensity: 1.2 }, { context: 'dawn' }, { message: 'x'.repeat(301) }]) {
     assert.throws(() => parseExperimentLog([{ ...base, ...bad }]));
   }
+});
+
+test('the control group: nudges vs moments held back on purpose, counting a quick return to a feed as a failure', async () => {
+  const { controlResult } = await import('../supabase/functions/_shared/experiments.ts');
+  const base = { day: '2026-11-02', time: '22:00', app: 'TikTok', arm: 'goal' as const, explore: false, reason: 'moment' as const, seconds_after: 30, window_seconds: 900, demo: false };
+  const events = [
+    ...Array.from({ length: 10 }, (_, i) => ({ ...base, id: `n${i}`, left: i < 7, back_to_feed: i === 0 })),
+    ...Array.from({ length: 4 }, (_, i) => ({ ...base, id: `h${i}`, left: i < 1, holdout: true })),
+  ];
+  const c = controlResult(events)!;
+  assert.deepEqual(c.nudged, { tried: 10, stayed_off: 6 });
+  assert.deepEqual(c.without, { tried: 4, stayed_off: 1 });
+  assert.equal(c.lift, 0.35);
+  assert.ok(c.prob_better! > 0.8);
+  assert.equal(controlResult(events.filter((e) => !('holdout' in e))), null, 'no control group yet: nothing to compare');
 });

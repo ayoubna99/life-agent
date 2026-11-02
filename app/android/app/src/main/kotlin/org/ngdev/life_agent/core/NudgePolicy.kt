@@ -8,6 +8,8 @@ enum class NudgeReason(val wire: String) {
     EVENT("event"),
     /** Demo mode: compressed thresholds, so experiments give results in minutes. */
     DEMO("demo"),
+    /** A moment (core/Moments.kt): one fact true only for this person, right now. */
+    MOMENT("moment"),
 }
 
 data class NudgeDecision(val reason: NudgeReason, val key: String, val value: Long)

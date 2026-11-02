@@ -251,7 +251,7 @@ void main() {
         find.text('3 h → 2 h 35 → today 2 h 10 · goal 30 min'),
         findsOneWidget,
       );
-      expect(find.text('Hit 1 of the last 1 days'), findsOneWidget);
+      expect(find.text('Hit 1 of the last 1 day'), findsOneWidget);
       expect(
         find.text('25 minutes back: two pages of your thesis at 22:15.'),
         findsOneWidget,
@@ -379,6 +379,58 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('"Gym first. TikTok can wait."'), findsOneWidget);
       expect(find.textContaining('{task}'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'the lab shows moments, the control group, and a quick return to a feed as a failure',
+    (t) async {
+      final r = ExperimentResults.fromJson({
+        'events': 3,
+        'days': 1,
+        'arms': <Object?>[],
+        'control': {
+          'nudged': {'tried': 10, 'stayed_off': 6},
+          'without': {'tried': 4, 'stayed_off': 1},
+          'lift': 0.35,
+          'prob_better': 0.9,
+        },
+        'log': [
+          for (final e in [
+            {
+              'angle': 'moment_lost_intent',
+              'left': true,
+              'message':
+                  'You picked up your phone for WhatsApp 14 minutes ago.',
+            },
+            {'angle': 'moment_exit_point', 'left': false, 'holdout': true},
+            {'angle': 'gym_blunt', 'left': true, 'back_to_feed': true},
+          ])
+            {
+              'day': '2026-11-02',
+              'time': '22:00',
+              'app': 'TikTok',
+              'arm': 'goal',
+              'label': 'nudges with your own goal',
+              'explore': false,
+              'minutes_after': 3,
+              ...e,
+            },
+        ],
+      });
+      expect(r.control!.withoutTried, 4);
+      t.view.physicalSize = const Size(1080, 9000);
+      t.view.devicePixelRatio = 2.7;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(MaterialApp(home: LabNotebookPage(results: r)));
+      await t.pumpAndSettle();
+      expect(find.text('Moment: lost intent'), findsOneWidget);
+      expect(find.byKey(const Key('lab-control')), findsOneWidget);
+      expect(find.text('Held back on purpose (control group)'), findsOneWidget);
+      expect(
+        find.textContaining('went back to a feed within 10 minutes'),
+        findsOneWidget,
+      );
     },
   );
 }
