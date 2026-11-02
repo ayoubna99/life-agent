@@ -374,17 +374,16 @@ class LimitWatcherService : Service() {
             Moments.exitPoint(pastSessions(front, now), current, label, nextAction, if (demo) 2 else Moments.MIN_SESSIONS),
             Moments.plannedNow(tasks, hhmm),
             Moments.phoneDown(store.eveningSleep, hhmm, store.tasks(LogicalDay.tomorrow(now, tz))),
-        ).filter { demo || gateKey(it, day, today, front) !in sent } // demo mode: as many takes as needed
-        if (candidates.isEmpty()) {
-            // in demo mode, say why the lost-intent moment does not fit (once a minute), so a take is never a mystery
-            if (demo && now - lastWhyNotAt > 60_000L) {
-                Moments.lostIntentWhyNot(events, now, front, feeds, skipPkgs(), ::appLabel)?.let {
-                    store.log("$label: no moment yet: $it")
-                    lastWhyNotAt = now
-                }
+            // demo mode: as many takes as needed, except phone-down (once a night, or it would win every time)
+        ).filter { (demo && it.kind != MomentKind.PHONE_DOWN) || gateKey(it, day, today, front) !in sent }
+        // in demo mode, say why the lost-intent moment does not fit (once a minute), so a take is never a mystery
+        if (demo && candidates.none { it.kind == MomentKind.LOST_INTENT } && now - lastWhyNotAt > 60_000L) {
+            Moments.lostIntentWhyNot(events, now, front, feeds, skipPkgs(), ::appLabel)?.let {
+                store.log("$label: no lost-intent moment: $it")
+                lastWhyNotAt = now
             }
-            return null
         }
+        if (candidates.isEmpty()) return null
         val band = Band.of(cal.get(Calendar.HOUR_OF_DAY))
         val context = "$front|${band.wire}"
         val (m, propensity) = Moments.pick(candidates, store.angleStats(), store.angleStats(context), rnd) ?: return null

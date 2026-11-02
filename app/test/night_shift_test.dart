@@ -433,4 +433,15 @@ void main() {
       );
     },
   );
+
+  test(
+    'taking an app off "apps that pull me away" also drops an old limit a plan set for it',
+    () async {
+      final env = Env();
+      await env.services.limits.set('Chrome', 25);
+      await env.services.limits.set('TikTok', 60);
+      await env.services.syncWatcher(distracting: ['TikTok']);
+      expect(env.native.limits, {'TikTok': 60});
+    },
+  );
 }

@@ -483,13 +483,21 @@ class AppServices {
       // No limits saved yet: the apps the user said pull them away are watched with 30 minutes a day, so nudges
       // work from day one (before, the watcher stayed off until "Start my day" set limits or demo mode was on).
       // Today's step-down target replaces the fixed 30 minutes; a lower limit from today's plan still wins over it.
-      final saved = await limits.all();
+      // "Apps that pull me away" decides which apps are watched: a limit an old plan set for an app the user has since
+      // taken off that list is dropped (else that app keeps counting as a distraction)
+      final mine = {for (final a in distracting) a.toLowerCase()};
+      final saved = {
+        for (final e in (await limits.all()).entries)
+          if (mine.isEmpty || mine.contains(e.key.toLowerCase()))
+            e.key: e.value,
+      };
       final apply = <String, int>{
         if (saved.isEmpty)
           for (final a in distracting) a: 30,
         ...saved,
       };
       targets.forEach((app, target) {
+        if (mine.isNotEmpty && !mine.contains(app.toLowerCase())) return;
         final key = apply.keys
             .where((k) => k.toLowerCase() == app.toLowerCase())
             .firstOrNull;
