@@ -70,11 +70,16 @@ object Moments {
         if (drift.isEmpty()) return null
         val start = label(first)
         val path = drift.take(3).joinToString(", then ") { label(it) }
+        val ago = when (mins) {
+            0 -> "just now"
+            1 -> "a minute ago"
+            else -> "$mins minutes ago"
+        }
         return MomentNudge(
             MomentKind.LOST_INTENT,
-            "$mins min since you unlocked",
-            mapOf("opened_for" to start, "minutes_since_unlock" to "$mins", "since_then" to path),
-            "You picked up your phone for $start $mins minutes ago. Since then: $path.",
+            if (mins == 0) "Since you unlocked" else "$mins min since you unlocked",
+            mapOf("opened_for" to start, "since_unlock" to ago, "since_then" to path),
+            "You picked up your phone for $start $ago. Since then: $path.",
             MomentAction("Back to $start", "app:$first"),
         )
     }
@@ -154,6 +159,20 @@ object Moments {
             "You said phone down at $sleepHHmm. It's $nowHHmm."
         }
         return MomentNudge(MomentKind.PHONE_DOWN, "Phone-down was $sleepHHmm", facts, text, MomentAction("Done for tonight", "done"))
+    }
+
+    /**
+     * Why there is no lost-intent moment right now, in plain words (for the watcher's log), or null when it fits or
+     * there is nothing to say.
+     */
+    fun lostIntentWhyNot(events: List<UsageEvent>, nowMs: Long, front: String, feeds: Set<String>, skip: Set<String>, label: (String) -> String): String? {
+        val sorted = events.sortedBy { it.timeMs }
+        val unlock = sorted.lastOrNull { it.type == UsageEventType.UNLOCK && it.timeMs <= nowMs }
+            ?: return "no unlock seen today (lock and unlock the phone first)"
+        val first = sorted.firstOrNull { it.timeMs >= unlock.timeMs && it.type == UsageEventType.FOREGROUND && it.pkg !in skip }?.pkg
+            ?: return null
+        if (first == front || first in feeds) return "the first app after unlocking was ${label(first)}, which is on your list of apps that pull you away"
+        return null
     }
 
     /** Which eligible moment to use: Thompson sampling over their results (same three-level prior as the bank's ideas). */

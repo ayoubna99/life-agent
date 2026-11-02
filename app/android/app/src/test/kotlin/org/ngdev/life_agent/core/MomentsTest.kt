@@ -22,10 +22,17 @@ class MomentsTest {
         val x = Moments.lostIntent(events, 114 * m, "tiktok", feeds, skip, ::label)!!
         assertEquals(MomentKind.LOST_INTENT, x.kind)
         assertEquals("You picked up your phone for WhatsApp 14 minutes ago. Since then: Instagram, then TikTok.", x.text)
-        assertEquals(mapOf("opened_for" to "WhatsApp", "minutes_since_unlock" to "14", "since_then" to "Instagram, then TikTok"), x.facts)
+        assertEquals(mapOf("opened_for" to "WhatsApp", "since_unlock" to "14 minutes ago", "since_then" to "Instagram, then TikTok"), x.facts)
+        // demo mode: right away, and it reads naturally
+        val quick = listOf(UsageEvent(100 * m, "android", UsageEventType.UNLOCK), UsageEvent(100 * m + 5_000, "whatsapp", UsageEventType.FOREGROUND), UsageEvent(100 * m + 15_000, "tiktok", UsageEventType.FOREGROUND))
+        assertEquals("You picked up your phone for WhatsApp just now. Since then: TikTok.", Moments.lostIntent(quick, 100 * m + 30_000, "tiktok", feeds, skip, ::label, 0)!!.text)
         assertEquals(MomentAction("Back to WhatsApp", "app:whatsapp"), x.action)
         // opened TikTok on purpose: nothing was lost
         assertNull(Moments.lostIntent(listOf(unlock(100), fg(100, "tiktok")), 114 * m, "tiktok", feeds, skip, ::label))
+        // why not: the first app was itself a feed on their list
+        assertEquals("the first app after unlocking was TikTok, which is on your list of apps that pull you away",
+            Moments.lostIntentWhyNot(listOf(unlock(100), fg(100, "tiktok")), 114 * m, "tiktok", feeds, skip, ::label))
+        assertNull(Moments.lostIntentWhyNot(events, 114 * m, "tiktok", feeds, skip, ::label))
         // too soon after the unlock
         assertNull(Moments.lostIntent(events, 105 * m, "tiktok", feeds, skip, ::label))
     }

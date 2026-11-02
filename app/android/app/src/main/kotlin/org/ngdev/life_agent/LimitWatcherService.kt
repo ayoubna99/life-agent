@@ -330,6 +330,7 @@ class LimitWatcherService : Service() {
     }
 
     private val sessionCache = HashMap<String, Pair<Long, List<Int>>>()
+    private var lastWhyNotAt = 0L
 
     /** The finished sessions on [pkg] in the last 14 days (minutes), worked out at most once an hour. */
     private fun pastSessions(pkg: String, now: Long): List<Int> {
@@ -369,12 +370,21 @@ class LimitWatcherService : Service() {
         val since = OutcomeMeter.sessionSince(events, front)
         val current = if (since == null) 0 else ((now - since) / 60_000L).toInt()
         val candidates = listOfNotNull(
-            Moments.lostIntent(events, now, front, feeds, skipPkgs(), ::appLabel, if (demo) 1 else Moments.LOST_AFTER_MIN),
+            Moments.lostIntent(events, now, front, feeds, skipPkgs(), ::appLabel, if (demo) 0 else Moments.LOST_AFTER_MIN),
             Moments.exitPoint(pastSessions(front, now), current, label, nextAction, if (demo) 2 else Moments.MIN_SESSIONS),
             Moments.plannedNow(tasks, hhmm),
             Moments.phoneDown(store.eveningSleep, hhmm, store.tasks(LogicalDay.tomorrow(now, tz))),
         ).filter { demo || gateKey(it, day, today, front) !in sent } // demo mode: as many takes as needed
-        if (candidates.isEmpty()) return null
+        if (candidates.isEmpty()) {
+            // in demo mode, say why the lost-intent moment does not fit (once a minute), so a take is never a mystery
+            if (demo && now - lastWhyNotAt > 60_000L) {
+                Moments.lostIntentWhyNot(events, now, front, feeds, skipPkgs(), ::appLabel)?.let {
+                    store.log("$label: no moment yet: $it")
+                    lastWhyNotAt = now
+                }
+            }
+            return null
+        }
         val band = Band.of(cal.get(Calendar.HOUR_OF_DAY))
         val context = "$front|${band.wire}"
         val (m, propensity) = Moments.pick(candidates, store.angleStats(), store.angleStats(context), rnd) ?: return null
