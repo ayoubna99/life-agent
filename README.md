@@ -24,6 +24,7 @@
   <a href="#-demo">Demo</a> ·
   <a href="#-measured-on-a-real-phone">Measured</a> ·
   <a href="#-the-night-shift-lify-is-a-scientist-and-you-are-its-only-subject">The night shift</a> ·
+  <a href="#-moments-one-fact-thats-true-only-for-you-right-now">Moments</a> ·
   <a href="#-why-it-matters">Why it matters</a> ·
   <a href="#-how-life-uses-metas-muse-models">Meta's Muse</a> ·
   <a href="#-under-the-hood">Under the hood</a> ·
@@ -49,7 +50,7 @@
 |---|---|
 | 👀 **It watches** | Real screen time from Android's usage events: which app, for how long, and when your phone went quiet last night. |
 | ✋ **It steps in** | A personal card on top of the app you're stuck in, at the right moment, with one tap to get out. |
-| 📏 **It measures** | Did you leave the app right after (within 2 minutes; 20 seconds in demo mode)? Did you tap "Pull me out"? Your phone's own usage data says so. |
+| 📏 **It measures** | Did you leave the app right after (within 2 minutes; 20 seconds in demo mode), and stay off the feeds? Going straight back to TikTok or Instagram within 10 minutes doesn't count. Your phone's own usage data says so. |
 | 🌱 **Day one** | Before Lify knows you, it starts from what tends to work for most people: concrete next steps, short and direct lines. Then it shifts to what works on you. |
 | 🧪 **It learns** | Every night Muse Spark Open reads your whole history, proposes **theories about you**, verifies them against your results, and writes tomorrow's experiment. |
 
@@ -110,7 +111,7 @@ to end on a real device; it is not a study of whether Life changes anyone's habi
 | What | Result |
 |---|---|
 | Nudges shown and measured by the phone (outside demo mode) | **39**: each one logged with its moment, its words and what happened next |
-| Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events. There is no control group yet, so this is not an effect size; the off-policy lift (Under the hood, 4) needs more data before it means anything. |
+| Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events. A control group is now built in (about 1 in 10 nudges held back on purpose); once it has enough data, the lab notebook shows the real effect of a nudge. |
 | Night shift, end to end | Muse Spark Open read the history, wrote theories and the nudge bank, and the critic finished **41 s** after the draft was saved |
 | The bank in use | Ideas from the night shift were shown and scored (in demo mode): the "late-night TikTok" idea got the user to leave **2 of 3** times |
 
@@ -188,7 +189,25 @@ Code: [`nightshift.ts`](supabase/functions/_shared/nightshift.ts) · [`theories.
 - **It works on what you care about:** every nudge points at your own goal, tomorrow's plan, or your real phone-down
   time last night ("Phone down at 03:30 last night. Tonight?"). Never a generic "take a break".
 - **It respects you:** at most 4 nudges per app per day, at least 20 minutes apart, spaced further out the longer you go
-  over (+15, +45, +105 minutes). Your own rules ("every 30 minutes on any app, get me out") replace them.
+  over (+15, +45, +105 minutes). A rule you set for an app ("every 30 minutes on TikTok, get me out") replaces that
+  app's limit nudges.
+
+---
+
+## 💡 Moments: one fact that's true only for you, right now
+
+Generic nudges could be sent to anyone. A moment carries one fact that is only true for this person at this second.
+The phone works out the fact from its own data; **Muse Spark Open** turns it into a line; the server keeps that line
+only if every number in it is one of the real facts.
+
+| Moment | When | Example | Button |
+|---|---|---|---|
+| **Lost intent** | You picked the phone up for one app and drifted into feeds | *"You picked up your phone for WhatsApp 14 minutes ago. Since then: Instagram, then TikTok."* | **Back to WhatsApp** |
+| **Your exit point** | This session passed the minute you usually leave on your own | *"You usually leave TikTok around minute 6. This is minute 9."* | **Open:** your next task |
+| **Planned now** | Your own plan says this time is for a task | *"You planned 'Finish chapter 3' for 21:00. It's 21:10."* | **Open: Finish chapter 3** |
+| **Phone-down** | You're past the phone-down time you chose | *"You said phone down at 23:00. Tomorrow starts with Gym at 07:00."* | **Done for tonight** |
+
+Thompson sampling learns which moment works on you, and the night shift writes theories about them.
 
 ---
 
@@ -231,21 +250,26 @@ Muse writes, plans and forms theories; Life's engine tests, measures and learns 
 4. **Off-policy evaluation (server):** self-normalised inverse propensity scoring estimates how "always send style X"
    would have done on the same moments. Life's lift over the best fixed nudge comes with a 90% bootstrap interval. The
    tests check that the estimator recovers known rates from heavily biased logs.
-5. **Strategy memory:** each evening review writes a new strategy version. The server refuses any change that doesn't
+5. **A real control group:** about 1 in 10 nudges is held back on purpose (no card) and only measured. The lab notebook
+   compares "with a nudge" vs "without one", so Life can show what its nudges actually add, not just how often people
+   left anyway.
+6. **Facts computed in code, phrased by Muse:** a moment's numbers come from the phone's own data; any line from the
+   model with a number that isn't one of those facts is thrown away.
+7. **Strategy memory:** each evening review writes a new strategy version. The server refuses any change that doesn't
    cite a number, and every version is kept (day 1 vs. today).
-6. **Real Android engineering:**
+8. **Real Android engineering:**
     - a foreground watcher reading `UsageStatsManager` events;
     - a custom overlay card with a "Pull me out" button. On phones that hide overlays it falls back to a heads-up notification automatically;
     - a watchdog alarm that restarts the watcher if the phone kills it;
     - exact alarms and real Clock-app alarms;
     - phone-down detection from unlock events, which ignores notification wake-ups, alarms and calls.
-7. **Production basics:**
+9. **Production basics:**
     - anonymous auth with row-level security on every table;
     - per-user and global daily caps;
     - keys only in server secrets;
     - every link checked before it is saved;
-    - 409 automated tests.
-8. **Open source:** [MIT license](LICENSE).
+    - 400+ automated tests.
+10. **Open source:** [MIT license](LICENSE).
 
 Code: [`Experiment.kt`](app/android/app/src/main/kotlin/org/ngdev/life_agent/core/Experiment.kt) ·
 [`experiments.ts`](supabase/functions/_shared/experiments.ts) · [`strategy.ts`](supabase/functions/_shared/strategy.ts) ·
@@ -502,5 +526,5 @@ pick them yourself.
     - voice;
     - Check Lify.
 - **License:** [MIT](LICENSE).
-- **Automated tests:** 413 in all: 193 backend, 150 Flutter, 66 Kotlin (JVM). The Android code compiles against the real Android 15 classes.
+- **Automated tests:** 400+ (backend, Flutter and Kotlin). The Android code compiles against the real Android 15 classes.
 - **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes.
