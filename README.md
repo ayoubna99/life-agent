@@ -5,7 +5,7 @@
 <h1 align="center">Life</h1>
 
 <p align="center">
-  <b>An autonomous, self-learning agent, just for you.</b><br/>
+  <b>An autonomous, self-learning personal agent.</b><br/>
   <b>Life</b> is the app. <b>Lify</b> is the agent inside it: it plans your day with you, steps in when you're stuck
   scrolling, and learns every night what works on you.<br/>
   Powered by Meta's <b>Muse Spark</b>, <b>Muse Spark Open</b>, <b>Muse Image</b> and <b>Muse Voice Transcribe</b>.
@@ -105,16 +105,57 @@ Then it's the real app on a real phone:
 - Your path (the step-down targets);
 - the night shift, and Lify's theories verified on real results.
 
+**Cards over the app, as they appeared on my phone** (left: a moment, with facts from the phone and words by Muse
+Spark Open; right: a line from last night's bank):
+
 <p align="center">
-  <img src="docs/media/card.jpg" width="230" alt="A nudge card over TikTok with the Pull me out button" />
-  <img src="docs/media/theories.jpg" width="230" alt="Lify's theories, verified on the user's own results" />
-  <img src="docs/media/lab.jpg" width="230" alt="The lab notebook: every nudge, why it was picked, what happened" />
+  <img src="docs/media/Screenshot_20261103_214327_TikTok.jpg" width="400" alt="A moment card over TikTok: you opened Gmail 3 minutes ago, still need to check that email? Back to Gmail" />
+  <img src="docs/media/Screenshot_20261103_221734_TikTok.jpg" width="400" alt="A nudge card over TikTok: dare you to close it and draft those three demo points. Pull me out" />
+</p>
+
+**What Lify learned about me, and how my plan changed:**
+
+<p align="center">
+  <img src="docs/media/25866.jpg" width="230" alt="Night shift: Lify's theories, each checked on my own results" />
+  <img src="docs/media/26228.jpg" width="230" alt="What works for you: nudges about my own goal, 75% likely best" />
+  <img src="docs/media/25856.jpg" width="230" alt="How Lify adapts: every strategy version, each change with its reason" />
+</p>
+
+**Planning with Lify, and the day it set up:**
+
+<p align="center">
+  <img src="docs/media/25616.jpg" width="230" alt="Planning tomorrow with Lify in chat" />
+  <img src="docs/media/25656.jpg" width="230" alt="A task screen: apply to 3 internships, with steps and the cover letter PDF" />
+  <img src="docs/media/25846.jpg" width="230" alt="Home: today's plan, screen time and the next task" />
+</p>
+
+<details>
+<summary><b>More screenshots</b> (onboarding, a CV in and a cover letter out, the evening review, step-down targets,
+alarms, more moments)</summary>
+<br/>
+<p align="center">
+  <img src="docs/media/25448.jpg" width="230" alt="Onboarding: Lify says hello and asks when your day starts and ends" />
+  <img src="docs/media/25645.jpg" width="230" alt="Sending a CV: Lify finds 3 internships and writes a one-page cover letter" />
+  <img src="docs/media/25647.jpg" width="230" alt="Review my day: what slipped, the pattern, and the updated strategy" />
 </p>
 <p align="center">
-  <img src="docs/media/home.jpg" width="230" alt="Home: today's plan, screen time, Lify is learning" />
-  <img src="docs/media/plan.jpg" width="230" alt="Planning tomorrow with Lify" />
-  <img src="docs/media/evening.jpg" width="230" alt="The evening notification: let's plan tomorrow" />
+  <img src="docs/media/25850.jpg" width="230" alt="Lify is learning: your path, step-down targets per app" />
+  <img src="docs/media/25729.jpg" width="230" alt="A task screen with a starter step and material" />
+  <img src="docs/media/25848.jpg" width="230" alt="Home when the day's plan is all done" />
 </p>
+<p align="center">
+  <img src="docs/media/26194.jpg" width="230" alt="The plan's alarms set in the Clock app" />
+  <img src="docs/media/25658.jpg" width="230" alt="The morning notification: your plan is ready" />
+</p>
+<p align="center">
+  <img src="docs/media/Screenshot_20261103_215726_TikTok.jpg" width="400" alt="A moment card: you opened Keep Notes 2 minutes ago, back to Keep Notes" />
+  <img src="docs/media/Screenshot_20261103_221832_TikTok.jpg" width="400" alt="A moment card: came for Gmail 3 minutes ago, back to Gmail" />
+</p>
+<p align="center">
+  <img src="docs/media/Screenshot_20261103_222558_TikTok.jpg" width="400" alt="A nudge card: swap TikTok for those internship cover letters. Pull me out" />
+  <img src="docs/media/Screenshot_20261103_041911_Twitch.jpg" width="400" alt="An exit-point moment on Twitch: you usually leave around minute 9, this is minute 13" />
+</p>
+</details>
 
 ---
 
