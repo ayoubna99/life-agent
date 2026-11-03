@@ -623,4 +623,3 @@ changed in Settings.
 - **License:** [MIT](LICENSE).
 - **Automated tests:** 400+ (backend, Flutter and Kotlin). The Android code compiles against the real Android 15 classes.
 - **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes.
-
