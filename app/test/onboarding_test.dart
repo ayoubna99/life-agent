@@ -95,9 +95,11 @@ void main() {
       );
       await next(t);
 
-      // the real numbers, and the three biggest apps chosen
+      // the real numbers; the feeds they use and the ones installed are chosen (Maps and Notes are not feeds)
       expect(find.text('3h 45m'), findsOneWidget);
       expect(find.textContaining('57 full days a year'), findsOneWidget);
+      await t.ensureVisible(find.byKey(const Key('ob-watching')));
+      expect(find.textContaining('Also watching: Instagram'), findsOneWidget);
       await t.tap(find.byKey(const Key('ob-app-Maps')));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('ob-app-Notes')));
@@ -116,7 +118,7 @@ void main() {
       expect(env.saved, {
         'wake': '07:00',
         'sleep': '23:00',
-        'apps': ['TikTok', 'YouTube', 'Notes'],
+        'apps': ['TikTok', 'YouTube', 'Instagram', 'Maps', 'Notes'],
         'name': 'Mo',
       });
       final store = env.services.onboarding as MemoryOnboardingStore;

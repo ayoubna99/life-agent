@@ -98,6 +98,7 @@ const STYLE_RULES: Record<NudgeStyle, string> = {
 const NUDGE_PROMPT = `## Mode: nudge (the user is scrolling right now)
 The user is using the app in "app" and has reached the point described in "reason" (approaching their limit, at it, over it, or "event": they opened it during a calendar event such as a lecture or meeting, named in "calendar_event"). Write ONE line they will see on a card on top of that app. The card's title already shows the minutes.
 - At most 12 words. Plain text: no markdown, no emoji, no quotes.
+- A real sentence a friend would text, with verbs and the little words ("the", "your", "to"); never keywords stitched together. Capitalise app names (TikTok, not tiktok).
 - No numbers about minutes, hours or limits, and never "you're at" or "past your limit": the title says that.
 - Never start with their name and a comma. Use the name rarely, if at all.
 - Concrete and personal: their real task, goal, plan or night. Never generic advice ("take a break", "drink water", "rest").
@@ -176,7 +177,8 @@ export function pickNextTask(tasks: PlanTask[], done: string[], now: string): Pl
 
 /** One clean plain-text message: no markdown, no line breaks, cut at a word if too long. */
 export function cleanMessage(text: string): string {
-  const flat = text.replace(/[*_`#>]+/g, '').replace(/\s+/g, ' ').replace(/^["'“”]+|["'“”]+$/g, '').trim();
+  const raw = text.replace(/[*_`#>]+/g, '').replace(/\s+/g, ' ').replace(/^["'“”]+|["'“”]+$/g, '').trim();
+  const flat = raw.charAt(0).toUpperCase() + raw.slice(1);
   if (flat.length <= NUDGE_LIMITS.maxChars) return flat;
   const cut = flat.slice(0, NUDGE_LIMITS.maxChars);
   const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));

@@ -5,7 +5,7 @@
 <h1 align="center">Life</h1>
 
 <p align="center">
-  <b>An autonomous, self-learning personal agent.</b><br/>
+  <b>An autonomous, self-learning agent, just for you.</b><br/>
   <b>Life</b> is the app. <b>Lify</b> is the agent inside it: it plans your day with you, steps in when you're stuck
   scrolling, and learns every night what works on you.<br/>
   Powered by Meta's <b>Muse Spark</b>, <b>Muse Spark Open</b>, <b>Muse Image</b> and <b>Muse Voice Transcribe</b>.
@@ -197,8 +197,8 @@ night: Muse Spark Open proposes theories about you, and every one is verified ag
           │              exact moments → P(true). ≥90% kept, ≤10% rejected. "left 5/7 vs 1/6"         │
           │ 3. DESIGN    tomorrow's NUDGE BANK: ~30 short lines grouped by ANGLE (the idea behind     │
           │              them). Winning angles get new words; 1-2 new angles to test; losers dropped  │
-          │ 4. CRITIC    a second pass plays your "inner skeptic" (reasoning "low") and cuts every    │
-          │              line that is generic, preachy or repeated                                   │
+          │ 4. CRITIC    a second pass plays your "inner skeptic" (reasoning "low") reads each line   │
+          │              as you'll see it and cuts the generic, preachy, repeated or garbled ones    │
           │ 5. CHECK     ≤12 words, no minute counts, no "you're at your limit", no health language,  │
           │              never a line you've already seen. Every line is checked before it's used.    │
           └──────────────────────────────────────┬─────────────────────────────────────────────────┘
@@ -251,8 +251,8 @@ Code: [`nightshift.ts`](supabase/functions/_shared/nightshift.ts) · [`theories.
 - **It works on what you care about:** every nudge points at your own goal, tomorrow's plan, or your real phone-down
   time last night ("Phone down at 03:30 last night. Tonight?"). Never a generic "take a break".
 - **It respects you:** at most 4 nudges per app per day, at least 20 minutes apart, spaced further out the longer you go
-  over (+15, +45, +105 minutes). A rule you set for an app ("every 30 minutes on TikTok, get me out") replaces that
-  app's limit nudges.
+  over (+15, +45, +105 minutes). A rule you set ("every 30 minutes on TikTok, remind me to do 10 push-ups") fires on
+  top, in the same 20-minute spacing.
 
 ---
 
@@ -318,7 +318,7 @@ Muse writes, plans and forms theories; Life's engine tests, measures and learns 
 6. **Facts computed in code, phrased by Muse:** a moment's numbers come from the phone's own data; any line from the
    model with a number that isn't one of those facts is thrown away.
 7. **Strategy memory:** each evening review writes a new strategy version. The server refuses any change that doesn't
-   cite a number, and every version is kept (day 1 vs. today).
+   cite a number, never shrinks your plan below 3 tasks, and keeps every version (day 1 vs. today).
 8. **Real Android engineering:**
     - a foreground watcher reading `UsageStatsManager` events;
     - a custom overlay card with a "Pull me out" button. On phones that hide overlays it falls back to a heads-up notification automatically;
@@ -472,15 +472,20 @@ See [app/README.md](app/README.md) for permissions and first run.
 1. **Install the [APK](https://github.com/ayoubna99/life-agent/releases/latest)** on an Android phone (Android 10+).
    No Android phone? Install [Android Studio](https://developer.android.com/studio) (free, Mac or Windows), open
    **Device Manager**, start an emulator (any phone with Android 10+), and drag the APK onto it.
-2. Finish the 5 onboarding slides. Allow **Usage access**, **Show over other apps** and **Notifications**. In Settings
+2. Finish the 5 onboarding slides. Allow **Usage access**, **Show over other apps** and **Notifications**. Lify
+   pre-chooses the feed apps on the phone (TikTok, Instagram, YouTube…) as *Apps that pull me away*, even with no
+   screen-time history yet; change them in Settings. In Settings
    → Check Lify, set **Battery** to unrestricted.
 3. **Talk to Lify:** tap *Plan tomorrow* and plan by voice or text. Saving the plan puts tomorrow's tasks and alarms on
    the phone right away (check your Clock app).
-4. **See a nudge:** Settings → Experiments → turn on *Experiments*, then *Demo mode*. Open one of the apps you chose
-   for about 20 seconds. A card slides in with **Pull me out**.
+4. **See a nudge:** Settings → Experiments → turn on *Experiments*, then *Demo mode*. Lock and unlock the phone, open
+   Gmail or Chrome for a few seconds, then one of the apps you chose: a **moment** slides in ("You picked up your phone
+   for Gmail…", with **Back to Gmail**). Stay a minute: the next card is a nudge from tonight's bank with **Pull me
+   out**. In demo mode the two take turns.
 5. **See the night shift:** Home → TEST → **Night shift (test)** (up to 2 minutes), then open *Lify's theories about
    you*: theories verified on your results, tomorrow's lines, and "How Lify thought about it".
-6. **See everything that happened:** Settings → Check Lify → *What the watcher did*.
+6. **See everything that happened:** Settings → Check Lify → *What the watcher did*: every card shown, held back or
+   skipped, and why there's no card yet ("12/30 min today; first nudge at 24 min").
 7. **Run the benchmark:** `npm run bench` (Node 22+, no key, no install, about 20 s). See [above](#-benchmark-rerun-it-in-20-seconds).
 8. **Run the tests:** `npm test` (backend), `cd app && flutter test` (app). They also run on every push:
    [GitHub Actions](https://github.com/ayoubna99/life-agent/actions/workflows/tests.yml).

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../agent/feeds.dart';
 import '../agent/models.dart';
 import '../app_services.dart';
 import '../ui/last_night.dart';
@@ -173,12 +174,20 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     } catch (_) {
       reality = const RealityCheck(minutesPerDay: 0, days: 0, topApps: []);
     }
+    final installed = await _installed();
     if (!mounted) return;
     setState(() {
       _reality = reality;
       _realityLoading = false;
-      // the three biggest are the likely culprits; the person can change it
-      if (_apps.isEmpty) _apps.addAll(reality.topApps.take(3).map((a) => a.$1));
+      // the feeds they use (or have installed) are the likely culprits; the person can change it
+      if (_apps.isEmpty) {
+        _apps.addAll(
+          defaultDistracting(
+            topUsed: [for (final a in reality.topApps) a.$1],
+            installed: installed,
+          ),
+        );
+      }
     });
   }
 
@@ -225,8 +234,19 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     );
   }
 
+  Future<List<String>> _installed() async {
+    try {
+      return await s.native.installedApps();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> _finish() async {
     setState(() => _finishing = true);
+    // never finish with nothing to watch (no usage history yet, or usage access not given): pre-choose the feeds
+    // installed on the phone, so nudges work from the first minute
+    if (_apps.isEmpty) _apps.addAll(defaultDistracting(installed: await _installed()));
     s.speaker.stop();
     await s.onboarding.saveName(_firstName);
     try {
@@ -625,7 +645,6 @@ class _EmberPainter extends CustomPainter {
 /// Slide titles: a small coral kicker over a big soft serif line.
 class _Heading extends StatelessWidget {
   const _Heading({
-    super.key,
     required this.kicker,
     required this.title,
     this.body,
@@ -1104,12 +1123,21 @@ class _RealitySlide extends StatelessWidget {
         child: Center(child: CircularProgressIndicator(color: Brand.coral)),
       );
     } else if (r.empty) {
-      body = const _Heading(
-        key: ValueKey('empty'),
-        kicker: 'Reality check',
-        title: 'Not much history yet',
-        body:
-            'Your phone has not recorded enough screen time. I will learn your day as we go.',
+      body = Column(
+        key: const ValueKey('empty'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _Heading(
+            kicker: 'Reality check',
+            title: 'Not much history yet',
+            body:
+                'Your phone has not recorded enough screen time. I will learn your day as we go.',
+          ),
+          if (chosen.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _Watching(apps: chosen.toList()),
+          ],
+        ],
       );
     } else {
       final top = r.topApps.isEmpty ? 1 : r.topApps.first.$2;
@@ -1192,6 +1220,16 @@ class _RealitySlide extends StatelessWidget {
                 onTap: () => onToggle(r.topApps[i].$1),
               ),
             ),
+          if (chosen.any((c) => !r.topApps.any((a) => a.$1 == c))) ...[
+            const SizedBox(height: 12),
+            _Watching(
+              apps: [
+                for (final c in chosen)
+                  if (!r.topApps.any((a) => a.$1 == c)) c,
+              ],
+              also: true,
+            ),
+          ],
         ],
       );
     }
@@ -1200,6 +1238,21 @@ class _RealitySlide extends StatelessWidget {
       child: AnimatedSwitcher(duration: Motion.medium, child: body),
     );
   }
+}
+
+/// The apps Lify will watch that are not in the list above (installed feeds), so nothing is chosen in secret.
+class _Watching extends StatelessWidget {
+  const _Watching({required this.apps, this.also = false});
+
+  final List<String> apps;
+  final bool also;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    '${also ? 'Also watching' : 'Watching'}: ${apps.join(', ')}. Change it anytime in Settings.',
+    key: const Key('ob-watching'),
+    style: Theme.of(context).textTheme.bodyMedium,
+  );
 }
 
 /// The waking day as a bar, with the phone's share filling in.

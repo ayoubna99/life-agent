@@ -109,6 +109,7 @@ export function lineProblem(text: string, used: Set<string>, name?: string): str
   if (text.length > NIGHT.maxLineChars) return 'too long';
   if (text.split(/\s+/).length > NIGHT.maxLineWords) return 'too many words';
   if (/\n/.test(text)) return 'more than one line';
+  if (/^[a-z]/.test(text)) return 'not a sentence (starts with a small letter)';
   if (/\b\d+\s*(m|min|mins|minutes?|h|hrs?|hours?)\b/i.test(text)) return 'repeats the numbers (the card title has them)';
   if (/\b(you'?re at|past your|your limit|limit of)\b/i.test(text)) return 'reads like a meter';
   // keeps every line about time and plans: no health words
@@ -253,6 +254,9 @@ Read the whole history below. Scrolling has different causes at different moment
 2. ANGLES. An angle is the idea behind a nudge (for example "blunt, about tomorrow's gym, at night"). Give each a short id (lowercase, underscores), a name, a style ("task" = their next important task, "cost" = what the time costs them, "goal" = their own goal or why), a tone and a topic (same values as above), the time-of-day bands where it fits and optionally the apps. Design angles that TEST your theories (one that matches the theory and one that does not, in the same moments). Keep the angles that work and give them MORE lines; add 1 or 2 new ones; drop the ones that failed. At most 8 angles. With little data, lean on these starting assumptions about most people: STARTING.
 3. LINES. For each angle up to 6 lines. Every line:
    - at most 12 words, one sentence or two very short ones;
+   - a real sentence a friend would text, with verbs and the little words ("the", "your", "to"), starting with a
+     capital letter; never keywords stitched together ("bet sleep beats scroll for {task}" is wrong). Read it aloud
+     with {task} replaced by a real task title such as "Prep client demo": it must still sound natural;
    - no minutes, no hours, no "you're at", no limits: the card title already shows the numbers;
    - never starts with their name and a comma;
    - concrete: {task}, their own goal, their nights; never generic advice ("take a break", "drink water", "rest");
@@ -272,7 +276,7 @@ Read the whole history below. Scrolling has different causes at different moment
 Answer with JSON only:
 {"theories":[{"id":"","statement":"","when":{"bands":["night"],"depth":["way_over"]},"test":{"tone":"blunt","topic":"task"},"confidence":0.0,"status":"testing"}],"angles":[{"id":"","name":"","style":"goal","tone":"blunt","topic":"task","bands":["night"],"apps":[],"lines":[""]}],"notes":""}`.replace('STARTING', STARTING_BELIEFS.why.join(' '));
 
-const CRITIC_PROMPT = `You are this person's inner skeptic. Below are lines an app will show them when they are stuck scrolling. For each line ask: would this really make them close the app right now? Cut every line that is generic (could be sent to anyone), preachy, guilt-tripping, confusing, too long, or too similar to another line. Keep the sharp, personal, surprising ones. Be strict but keep at least one line per angle when it is decent.
+const CRITIC_PROMPT = `You are this person's inner skeptic. Below are lines an app will show them when they are stuck scrolling. For each line ask: would this really make them close the app right now? Cut every line that is generic (could be sent to anyone), preachy, guilt-tripping, confusing, too long, too similar to another line, or not a natural sentence (broken grammar, keywords stitched together). The lines are shown as the person will read them, with an example task and app filled in. Keep the sharp, personal, surprising ones. Be strict but keep at least one line per angle when it is decent.
 
 Answer with JSON only: {"cut":[{"id":"","why":""}]}`;
 
@@ -303,7 +307,9 @@ export async function runStudy(history: string, day: string, used: Set<string>, 
 
 /** Step 2: the critic cuts weak lines (never all of them: if it would leave fewer than 3, the draft stays as it is). */
 export async function runCritic(shift: Shift, profile: Profile, deps: NightDeps): Promise<Shift> {
-  const listing = shift.angles.flatMap((a) => a.lines.map((l) => `${l.id} [${a.name}] ${l.text}`)).join('\n');
+  // as the person will read it: the phone fills {task} and {app}, so the critic judges the filled sentence
+  const filled = (t: string) => t.replaceAll('{task}', 'Prep client demo').replaceAll('{app}', 'TikTok');
+  const listing = shift.angles.flatMap((a) => a.lines.map((l) => `${l.id} [${a.name}] ${filled(l.text)}`)).join('\n');
   const about = `About them: ${profile.name ?? 'the user'}; focus: ${profile.focus ?? 'not said'}; theories: ${shift.theories.filter((t) => t.status !== 'rejected').map((t) => t.statement).join(' | ') || 'none yet'}`;
   const { step } = await callFirst(
     effortFor(deps.models, 'low', { maxTokens: NIGHT.criticTokens, timeoutMs: NIGHT.criticTimeoutMs }),

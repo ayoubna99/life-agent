@@ -167,3 +167,9 @@ test('lines name the real plan, and a new plan for that day means new lines (no 
   assert.equal(b.shift.plan_key, planKey({ tasks: [{ title: 'Gym', minutes: 60, start_time: '07:00' }], limits: [] }));
   assert.match(JSON.parse(again.calls[0].init.body as string).messages[1].content, /2026-10-30: 07:00 Gym \(60 min\)/);
 });
+
+test('a line that is not a sentence is refused (the real one: "leave tiktok, bet sleep beats scroll for prep client demo")', () => {
+  assert.equal(lineProblem('leave tiktok, bet sleep beats scroll for {task}', new Set()), 'not a sentence (starts with a small letter)');
+  assert.equal(lineProblem('{task} is waiting. Two minutes to start it.', new Set()), null);
+  assert.equal(lineProblem('TikTok will keep. Your plan will not.', new Set()), null);
+});
