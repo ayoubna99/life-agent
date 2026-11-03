@@ -40,7 +40,7 @@
 
 > It's 1 AM. You said you'd be off your phone by 11. You've been on TikTok for two hours.
 >
-> A card slides over the video: **"Gym at 6. TikTok will still be here."** One button: **Pull me out**.
+> A card slides over the video: **"Gym at 6. TikTok will still be here."** One button: **Let's hit the gym!**.
 >
 > You've never seen that sentence before. Lify wrote it last night, after studying the last 30 nudges it sent you
 > and finding the ones that actually made you put the phone down.
