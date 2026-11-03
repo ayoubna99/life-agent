@@ -5,7 +5,7 @@
 <h1 align="center">Life</h1>
 
 <p align="center">
-  <b>An autonomous, self-learning personal agent.</b><br/>
+  <b>An autonomous, self-learning agent.</b><br/>
   <b>Life</b> is the app. <b>Lify</b> is the agent inside it: it plans your day with you, steps in when you're stuck
   scrolling, and learns every night what works on you.<br/>
   Powered by Meta's <b>Muse Spark</b>, <b>Muse Spark Open</b>, <b>Muse Image</b> and <b>Muse Voice Transcribe</b>.
@@ -105,11 +105,21 @@ Then it's the real app on a real phone:
 - Your path (the step-down targets);
 - the night shift, and Lify's theories verified on real results.
 
-**Cards over the app, as they appeared on my phone** (left: a moment, with facts from the phone and words by Muse
-Spark Open; right: a line from last night's bank):
+**Cards over the app, as they appeared on my phone.** Moments: facts from the phone, words by Muse Spark Open, and a
+button straight back to the app you came for:
 
 <p align="center">
   <img src="docs/media/Screenshot_20261103_214327_TikTok.jpg" width="400" alt="A moment card over TikTok: you opened Gmail 3 minutes ago, still need to check that email? Back to Gmail" />
+  <img src="docs/media/Screenshot_20261103_215726_TikTok.jpg" width="400" alt="A moment card over TikTok: you opened Keep Notes 2 minutes ago, still remember what you wanted to note? Back to Keep Notes" />
+</p>
+
+An exit point on Twitch ("you usually leave around minute 9, this is minute 13"), and a line from last night's bank
+with **Pull me out**:
+
+<p align="center">
+  <img src="docs/media/Screenshot_20261103_041911_Twitch.jpg" width="810" alt="An exit-point moment on Twitch: you usually leave around minute 9, this is minute 13" />
+</p>
+<p align="center">
   <img src="docs/media/Screenshot_20261103_221734_TikTok.jpg" width="400" alt="A nudge card over TikTok: dare you to close it and draft those three demo points. Pull me out" />
 </p>
 
@@ -131,7 +141,7 @@ Spark Open; right: a line from last night's bank):
 
 <details>
 <summary><b>More screenshots</b> (onboarding, a CV in and a cover letter out, the evening review, step-down targets,
-alarms, more moments)</summary>
+alarms, more cards)</summary>
 <br/>
 <p align="center">
   <img src="docs/media/25448.jpg" width="230" alt="Onboarding: Lify says hello and asks when your day starts and ends" />
@@ -148,12 +158,8 @@ alarms, more moments)</summary>
   <img src="docs/media/25658.jpg" width="230" alt="The morning notification: your plan is ready" />
 </p>
 <p align="center">
-  <img src="docs/media/Screenshot_20261103_215726_TikTok.jpg" width="400" alt="A moment card: you opened Keep Notes 2 minutes ago, back to Keep Notes" />
   <img src="docs/media/Screenshot_20261103_221832_TikTok.jpg" width="400" alt="A moment card: came for Gmail 3 minutes ago, back to Gmail" />
-</p>
-<p align="center">
   <img src="docs/media/Screenshot_20261103_222558_TikTok.jpg" width="400" alt="A nudge card: swap TikTok for those internship cover letters. Pull me out" />
-  <img src="docs/media/Screenshot_20261103_041911_Twitch.jpg" width="400" alt="An exit-point moment on Twitch: you usually leave around minute 9, this is minute 13" />
 </p>
 </details>
 
