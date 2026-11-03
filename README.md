@@ -58,6 +58,11 @@
 **On my own phone so far:** I left the app after **47%** of Lify's nudges, and it worked out what works on me:
 nudges about my own goal (left 10 of 17 times). [The numbers](#-measured-on-a-real-phone)
 
+**Nobody has to press anything.** Each night Lify decides on its own what to test tomorrow, and during the day it
+decides when to step in, which line to use, and whether to hold a nudge back. It sets the alarms and calendar
+reminders for the plan you agreed on, lowers your daily target only when you've earned it, and drops ideas that stop
+working.
+
 Planning your day, alarms and study material are there too, but they serve this loop. The agent's job is to get you
 off the phone and onto what you said matters.
 
@@ -116,10 +121,10 @@ device; it is an early signal from one person, not a study.
 |---|---|
 | **Left the app after a nudge** | **33 of 70 nudges (47%)**, measured by Android's usage events, not by the model |
 | **It found what works on me** | Nudges about **my own goal**: I left **10 of 17** times (59%), vs 11 of 26 for my next task and 12 of 27 for what the time costs. Lify rates "my own goal" **75% likely the best** style for me, and now sends more of them |
+| **A second, independent method agrees** | Off-policy evaluation on the same logs, which never sees Lify's ratings, also picks "my own goal" as the best style: about **56%** if sent every time, up from the 47% so far, while Lify was still trying every style to find out. That is where it is heading now |
 | **Left and stayed off** (no feed within 10 minutes, outside demo mode) | **27 of 52** |
-| **Its own check on itself** | Off-policy estimate: Life's mix so far got me to leave 47% of the time; always sending "my own goal" would have been about 56%. That gap is the cost of testing the other styles, and why it now leans on the winner |
-| **Control group** | Just started: 1 nudge held back on purpose so far, too few to compare yet |
 | **Night shift, end to end** | Muse Spark Open read the whole history, wrote theories and tomorrow's nudge bank, and the critic finished **41 s** after the draft |
+| **Control group** | Running: about 1 in 10 nudges is held back on purpose and only measured, so "with Lify" can be compared with "without" as the days add up |
 
 Every number above comes from the app's own logs; the queries are in [docs/MEASURED.md](docs/MEASURED.md).
 
@@ -225,7 +230,7 @@ Four Meta models, each used for what it is uniquely good at:
 | **Muse Spark** (Chat Completions, Responses) | The agent: planning chats with 18 tools (calendar, alarms, app limits, PDFs, documents), web search with sources, reading photos and scanned PDFs | Agentic tool calling, multimodal input |
 | **Muse Image** (Image generation) | Pictures Lify makes for your day and your tasks | Image generation |
 | **Muse Voice Transcribe** (Transcribe) | Talk to Lify instead of typing | Speech to text |
-| **Muse Spark Open** (open weights, served on **Baseten**) | **The night shift** (theories + nudge bank + critic), live nudges, the evening "let's plan tomorrow" notification | **1M-token context:** reads your whole history at once instead of retrieval. **Controllable reasoning:** thinks hard at night (`medium`), almost not at all for live nudges (`low`). **Visible reasoning:** shown in the app as "how Lify thought about it". **Open weights:** Life runs it on Baseten's inference platform, one of Meta's launch partners, and the same pipeline can be self-hosted so your history never leaves your servers. |
+| **Muse Spark Open** (open weights, served on **Baseten** as `meta-models/muse-spark-open-1026`) | **The night shift** (theories + nudge bank + critic), live nudges, the evening "let's plan tomorrow" notification | **1M-token context:** reads your whole history at once instead of retrieval. **Controllable reasoning:** thinks hard at night (`medium`), almost not at all for live nudges (`low`). **Visible reasoning:** shown in the app as "how Lify thought about it". **Open weights:** Life runs it on Baseten's inference platform, one of Meta's launch partners, and the same pipeline can be self-hosted so your history never leaves your servers. |
 
 - Muse Spark and Muse Spark Open back each other up, so a nudge still arrives if one is down.
 
@@ -238,7 +243,7 @@ Four Meta models, each used for what it is uniquely good at:
 | A PDF (a CV, a course, an article) | Text PDFs read on the server; scanned ones by **Muse Spark** (vision) | A real **PDF** (a study sheet, a cover letter) | Muse Spark writes it, the server lays it out |
 | A photo (timetable, whiteboard, notes) | **Muse Spark** (vision) | A **picture** (a card for your day) | **Muse Image** |
 | A link, or "find me…" | the server reads the page; **Muse Spark web search** with sources | Links in the task, checked before they're saved | Muse Spark |
-- Code: [`muse.ts`](supabase/functions/_shared/muse.ts) (routing, failover, reasoning effort),
+- Code: [`muse.ts`](supabase/functions/_shared/muse.ts#L26) (model setup, routing, failover, reasoning effort),
   [`nudge.ts`](supabase/functions/_shared/nudge.ts), [`evening.ts`](supabase/functions/_shared/evening.ts).
 
 ---
