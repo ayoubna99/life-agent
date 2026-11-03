@@ -5,7 +5,7 @@
 <h1 align="center">Life</h1>
 
 <p align="center">
-  <b>An autonomous, self-improving agent, just for you.</b><br/>
+  <b>An autonomous, self-learning personal agent.</b><br/>
   <b>Life</b> is the app. <b>Lify</b> is the agent inside it: it plans your day with you, steps in when you're stuck
   scrolling, and learns every night what works on you.<br/>
   Powered by Meta's <b>Muse Spark</b>, <b>Muse Spark Open</b>, <b>Muse Image</b> and <b>Muse Voice Transcribe</b>.
@@ -32,6 +32,7 @@
   <a href="#-how-judges-can-verify">Verify it</a> ·
   <a href="#-validate-with-your-own-meta-key">Your own key</a> ·
   <a href="#-permissions-what-life-needs-and-why">Permissions</a> ·
+  <a href="#-you-stay-in-control">Your control</a> ·
   <a href="#-privacy">Privacy</a>
 </p>
 
@@ -484,6 +485,23 @@ loop; everything else makes Life better but is optional. Settings → Check Lify
 
 Life never asks for contacts, location, SMS, the camera roll or your accounts. Photos and PDFs are only read when you
 pick them yourself.
+
+---
+
+## 🧭 You stay in control
+
+Lify acts on what you ask it for: the plan you make with it, the rules you set. Everything else can be turned off or
+changed in Settings.
+
+- **Choose which apps it watches:** only the apps in *Apps that pull me away*. Take one off the list and its limits and
+  nudges go too.
+- **Nudges as notifications:** prefer a notification to a card over the app? One switch in Settings → Check Lify.
+- **Your own rules:** see them in Settings → *Your reminders* and remove any of them there, or just ask Lify.
+- **Experiments off:** nothing about your nudges is sent to the server; the learning stays on your phone.
+- **Every alarm is a normal one:** phone alarms are in your Clock app, where you can change or delete them like any other.
+- **The silent "Life" notification:** Android requires it while the watcher runs; you can hide its category in your
+  phone's notification settings.
+- **Your data:** see [Privacy](#-privacy) for what is stored and how to delete it.
 
 ---
 
