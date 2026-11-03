@@ -76,4 +76,13 @@ class NudgePolicyTest {
         assertEquals(mapOf("$day|a|limit" to 2L), kept)
     }
 
+    @Test
+    fun saysWhyNoNudgeInPlainWords() {
+        assertEquals("12/30 min today; first nudge at 24 min", NudgePolicy.whyNot(day, "a", 12, 30, now, long, emptyMap()))
+        assertEquals("the last nudge was less than 20 min ago (next in 15 min)", NudgePolicy.whyNot(day, "a", 50, 30, now, now - 5 * 60_000L, emptyMap()))
+        val four = mapOf("$day|a|approaching" to 1L, "$day|a|limit" to 1L, "$day|a|over" to 2L)
+        assertEquals("already 4 nudges on this app today (the most per day)", NudgePolicy.whyNot(day, "a", 120, 30, now, long, four))
+        assertEquals("40/30 min; next nudge at 45 min", NudgePolicy.whyNot(day, "a", 40, 30, now, long, mapOf("$day|a|limit" to 1L)))
+        assertEquals("demo mode: stay on the app 15 s in a row", NudgePolicy.whyNot(day, "a", 1, 30, now, long, emptyMap(), demo = true, cooldownMs = DemoPolicy.COOLDOWN_MS))
+    }
 }

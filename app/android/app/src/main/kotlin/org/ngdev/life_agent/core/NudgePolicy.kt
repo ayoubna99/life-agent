@@ -59,6 +59,23 @@ object NudgePolicy {
         return if (sent.containsKey(key)) null else NudgeDecision(NudgeReason.EVENT, key, nowMs)
     }
 
+    /** Why [decide] said no, in plain words for the watcher's log. */
+    fun whyNot(day: String, pkg: String, usedMinutes: Int, limitMinutes: Int, nowMs: Long, lastNudgeAtMs: Long, sent: Map<String, Long>, demo: Boolean = false, cooldownMs: Long = COOLDOWN_MS): String {
+        val wait = cooldownMs - (nowMs - lastNudgeAtMs)
+        if (wait > 0) return "the last nudge was less than ${cooldownMs / 60_000L} min ago (next in ${(wait + 59_999L) / 60_000L} min)"
+        if (demo) return "demo mode: stay on the app ${DemoPolicy.SESSION_MS / 1000} s in a row"
+        val overs = (sent["$day|$pkg|over"] ?: 0L).toInt()
+        val today = (if (sent.containsKey("$day|$pkg|approaching")) 1 else 0) + (if (sent.containsKey("$day|$pkg|limit")) 1 else 0) + overs
+        if (today >= MAX_PER_APP) return "already $MAX_PER_APP nudges on this app today (the most per day)"
+        if (usedMinutes >= limitMinutes) {
+            val step = OVER_STEPS.getOrNull(overs) ?: return "no more steps over the limit today"
+            return "$usedMinutes/$limitMinutes min; next nudge at ${limitMinutes + step} min"
+        }
+        val threshold = (limitMinutes * APPROACH_PERCENT + 99) / 100
+        return if (usedMinutes < threshold) "$usedMinutes/$limitMinutes min today; first nudge at $threshold min"
+        else "$usedMinutes/$limitMinutes min; next nudge at the limit ($limitMinutes min)"
+    }
+
     /** Old days are forgotten so the saved state stays small. */
     fun keepOnly(day: String, sent: Map<String, Long>): Map<String, Long> = sent.filterKeys { it.startsWith("$day|") }
 }

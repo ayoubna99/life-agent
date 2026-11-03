@@ -6,7 +6,7 @@ import { runChat } from '../supabase/functions/_shared/loop.ts';
 import type { ChatRequest } from '../supabase/functions/_shared/loop.ts';
 import { parseExperimentLog, probabilityBest, sampleBeta, summarizeExperiments } from '../supabase/functions/_shared/experiments.ts';
 import type { ExperimentEvent } from '../supabase/functions/_shared/experiments.ts';
-import { validateStrategy } from '../supabase/functions/_shared/strategy.ts';
+import { strategyForPrompt, validateStrategy } from '../supabase/functions/_shared/strategy.ts';
 import { runServerTool } from '../supabase/functions/_shared/tools.ts';
 import type { ToolEnv } from '../supabase/functions/_shared/tools.ts';
 import { callsReply, cfg, fakeNet, jwt, MemoryStore, SUPABASE_URL, textReply, USER } from './helpers.ts';
@@ -212,4 +212,12 @@ test('Thompson sampling maths: Beta draws have the right mean, and equal results
   // a clear winner over a clear loser; a style never tried keeps a real chance (that is what makes it get tried)
   const [good, bad, untried] = probabilityBest([{ tried: 30, left: 25 }, { tried: 30, left: 5 }, { tried: 0, left: 0 }]);
   assert.ok(good > 0.75 && bad === 0 && untried > 0.1, `${good} ${bad} ${untried}`);
+});
+
+test('a few bad days never shrink the plan below 3 tasks', () => {
+  const r = validateStrategy({ plan_style: { max_tasks: 1 } });
+  assert.ok(r.ok);
+  if (r.ok) assert.equal(r.strategy.plan_style.max_tasks, 3);
+  const old = { version: 4, for_date: '2026-11-03', limits: [], plan_style: { max_tasks: 1 }, risk_windows: [], rules: [], changes: [], evidence: [] };
+  assert.match(strategyForPrompt(old), /"max_tasks":3/);
 });

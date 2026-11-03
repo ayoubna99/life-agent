@@ -280,7 +280,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         plan_style: {
           type: 'object',
           properties: {
-            max_tasks: { type: 'integer', minimum: 1, maximum: 12 },
+            max_tasks: { type: 'integer', minimum: 3, maximum: 12 },
             buffer_pct: { type: 'integer', minimum: 0, maximum: 100 },
             best_window: { type: 'string', description: 'HH:MM-HH:MM' },
           },

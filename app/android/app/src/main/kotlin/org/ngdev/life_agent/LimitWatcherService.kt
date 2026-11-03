@@ -174,25 +174,39 @@ class LimitWatcherService : Service() {
             return 20_000L
         }
 
-        // 2. Moments: a nudge carrying one fact true only for this person, right now (core/Moments.kt).
-        if (rules.none { it.pkg == front }) {
-            val limitMin = limits.firstOrNull { it.pkg == front }?.minutes ?: 0
-            momentNudge(front, events, now, tz, day, hhmm, used, limitMin, sent, limits.map { it.pkg }.toSet(), demo, cal)?.let { return it }
+        // 2. Moments: a nudge carrying one fact true only for this person, right now (core/Moments.kt). The user's own
+        // reminder does not silence them: it only fires after a long session, and the cooldown keeps it to one voice.
+        // In demo mode a moment may repeat every minute, so it would always win: there, moments and limit cards take
+        // turns, and both kinds can be filmed.
+        val limitMin = limits.firstOrNull { it.pkg == front }?.minutes ?: 0
+        if (!(demo && lastWasMoment)) {
+            momentNudge(front, events, now, tz, day, hhmm, used, limitMin, sent, limits.map { it.pkg }.toSet(), demo, cal)?.let {
+                lastWasMoment = true
+                return it
+            }
         }
 
-        // 3. Daily limits. A rule the user made for THIS app replaces its limit nudges (one voice, not two). A rule for
-        // any app does not: it counts time in a row, and hours of short sessions would never get a nudge.
-        if (rules.any { it.pkg == front }) return idle
-        val limit = limits.firstOrNull { it.pkg == front } ?: return idle
+        // 3. Daily limits.
+        val limit = limits.firstOrNull { it.pkg == front }
+        if (limit == null) {
+            quiet(front, now, demo) { "not on your list of apps that pull you away, so no nudges here" }
+            return idle
+        }
         val event = runCatching { DayRules.currentEvent(calendar.events(now - 12 * 3600_000L, now + 60_000L), now) }.getOrNull()
         val decision: NudgeDecision = when {
             event != null -> NudgePolicy.decideEvent(day, front, event.startMs, now, store.lastNudgeAt, sent)
             demo -> if (DemoPolicy.due(OutcomeMeter.frontSince(events, front), now, store.lastNudgeAt)) NudgeDecision(NudgeReason.DEMO, "$day|$front|demo|$now", now) else null
             else -> NudgePolicy.decide(day, front, used, limit.minutes, now, store.lastNudgeAt, sent)
-        } ?: return if (demo) 5_000L else 20_000L
+        } ?: run {
+            quiet(front, now, demo) {
+                NudgePolicy.whyNot(day, front, used, limit.minutes, now, store.lastNudgeAt, sent, demo, if (demo) DemoPolicy.COOLDOWN_MS else NudgePolicy.COOLDOWN_MS)
+            }
+            return if (demo) 5_000L else 20_000L
+        }
 
         if (decision.reason != NudgeReason.DEMO) store.saveSent(sent + (decision.key to decision.value))
         store.lastNudgeAt = now
+        lastWasMoment = false
 
         val band = Band.of(cal.get(Calendar.HOUR_OF_DAY))
         val context = "$front|${band.wire}"
@@ -331,6 +345,19 @@ class LimitWatcherService : Service() {
 
     private val sessionCache = HashMap<String, Pair<Long, List<Int>>>()
     private var lastWhyNotAt = 0L
+    private var lastWasMoment = false
+    private val lastQuietAt = HashMap<String, Long>()
+
+    /**
+     * Says in the log why an app in front gets no card right now (once a minute in demo mode, every 15 minutes
+     * otherwise), so silence is never a mystery.
+     */
+    private fun quiet(pkg: String, now: Long, demo: Boolean, why: () -> String) {
+        val every = if (demo) 60_000L else 15 * 60_000L
+        if (now - (lastQuietAt[pkg] ?: 0L) < every) return
+        lastQuietAt[pkg] = now
+        store.log("${appLabel(pkg)}: no card yet: ${why()}")
+    }
 
     /** The finished sessions on [pkg] in the last 14 days (minutes), worked out at most once an hour. */
     private fun pastSessions(pkg: String, now: Long): List<Int> {

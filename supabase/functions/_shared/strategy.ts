@@ -30,7 +30,7 @@ export interface Strategy extends StrategyData {
   created_at?: string;
 }
 
-export const STRATEGY_LIMITS = { limits: 8, rules: 5, changes: 3, evidence: 5, windows: 4, text: 160 };
+export const STRATEGY_LIMITS = { limits: 8, rules: 5, changes: 3, evidence: 5, windows: 4, text: 160, minTasks: 3 };
 
 const WINDOW = /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -72,7 +72,8 @@ export function validateStrategy(raw: unknown): Checked {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return { ok: false, error: 'plan_style must be an object.' };
     if (p.max_tasks !== undefined) {
       if (!whole(p.max_tasks, 1, 12)) return { ok: false, error: 'max_tasks must be a whole number from 1 to 12.' };
-      style.max_tasks = p.max_tasks as number;
+      // a few bad days (or days of testing) never shrink the plan to one task: nothing would be left to plan around
+      style.max_tasks = Math.max(STRATEGY_LIMITS.minTasks, p.max_tasks as number);
     }
     if (p.buffer_pct !== undefined) {
       if (!whole(p.buffer_pct, 0, 100)) return { ok: false, error: 'buffer_pct must be a whole number from 0 to 100.' };
@@ -105,5 +106,6 @@ export function validateStrategy(raw: unknown): Checked {
 /** The strategy as the planning and execute prompts see it: what to apply, without the history of why. */
 export function strategyForPrompt(s: Strategy | null): string {
   if (!s) return 'none yet (no review has been done)';
-  return JSON.stringify({ version: s.version, for_date: s.for_date, limits: s.limits, plan_style: s.plan_style, risk_windows: s.risk_windows, rules: s.rules });
+  const style = s.plan_style?.max_tasks !== undefined ? { ...s.plan_style, max_tasks: Math.max(STRATEGY_LIMITS.minTasks, s.plan_style.max_tasks) } : s.plan_style;
+  return JSON.stringify({ version: s.version, for_date: s.for_date, limits: s.limits, plan_style: style, risk_windows: s.risk_windows, rules: s.rules });
 }

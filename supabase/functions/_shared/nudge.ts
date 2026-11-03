@@ -61,7 +61,7 @@ Turn these facts into ONE line they will read on a card over the app, like a fri
 question, a wink, a guess about what they were up to ("Looked like you were reading something. Did TikTok sneak in?"),
 or a callback to their own plan. Make them smile or pause, never feel told off.
 Hard rules: every number and time in your line must be one of the facts, exactly; never invent a task, an app or a
-reason they did not give (a guess must be a question, not a claim). At most 22 words. No lecture, no advice, no health
+reason they did not give (a guess must be a question, not a claim). Never start with their name. At most 22 words. No lecture, no advice, no health
 or sleep claims, no emoji. Different words from "recent_nudges". Reply in the user's language.
 Ideas per moment (do not copy, find your own):
 - lost_intent: they opened one app for a reason and drifted: ask about what they came for, playfully.

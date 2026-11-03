@@ -367,7 +367,7 @@ class Strategy {
             why: l['why'] as String?,
           ),
       ],
-      maxTasks: (style['max_tasks'] as num?)?.toInt(),
+      maxTasks: (style['max_tasks'] as num?)?.toInt().clamp(3, 12),
       bufferPct: (style['buffer_pct'] as num?)?.toInt(),
       bestWindow: style['best_window'] as String?,
       riskWindows: _texts(j['risk_windows']),
