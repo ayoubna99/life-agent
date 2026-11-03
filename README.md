@@ -23,6 +23,7 @@
 <p align="center">
   <a href="#-demo">Demo</a> ·
   <a href="#-measured-on-a-real-phone">Measured</a> ·
+  <a href="#-benchmark-rerun-it-in-20-seconds">Benchmark</a> ·
   <a href="#-the-night-shift-lify-is-a-scientist-and-you-are-its-only-subject">The night shift</a> ·
   <a href="#-moments-one-fact-thats-true-only-for-you-right-now">Moments</a> ·
   <a href="#-why-it-matters">Why it matters</a> ·
@@ -33,7 +34,8 @@
   <a href="#-validate-with-your-own-meta-key">Your own key</a> ·
   <a href="#-permissions-what-life-needs-and-why">Permissions</a> ·
   <a href="#-you-stay-in-control">Your control</a> ·
-  <a href="#-privacy">Privacy</a>
+  <a href="#-privacy">Privacy</a> ·
+  <a href="#-known-limits">Known limits</a>
 </p>
 
 ---
@@ -57,6 +59,10 @@
 
 **On my own phone so far:** I left the app after **47%** of Lify's nudges, and it worked out what works on me:
 nudges about my own goal (left 10 of 17 times). [The numbers](#-measured-on-a-real-phone)
+
+**On 300 simulated people** with known answers (`npm run bench`, no key, about 20 s): after 120 nudges people leave
+after **43%** of Life's nudges vs **34%** for a fixed app, and Life names each person's best idea for **73%** of them.
+[The benchmark](#-benchmark-rerun-it-in-20-seconds)
 
 **Nobody has to press anything.** Each night Lify decides on its own what to test tomorrow, and during the day it
 decides when to step in, which line to use, and whether to hold a nudge back. It sets the alarms and calendar
@@ -127,6 +133,51 @@ device; it is an early signal from one person, not a study.
 | **Control group** | Running: about 1 in 10 nudges is held back on purpose and only measured, so "with Lify" can be compared with "without" as the days add up |
 
 Every number above comes from the app's own logs; the queries are in [docs/MEASURED.md](docs/MEASURED.md).
+
+---
+
+## 📐 Benchmark: rerun it in 20 seconds
+
+One person can't prove a learning loop works, so Life ships a benchmark anyone can rerun: `npm run bench`. It needs no
+API key and no phone, and it's seeded, so you get exactly these numbers. **The people are simulated**, so the right
+answer is known in advance: each of 300 people has a hidden chance of leaving the app for each of 6 nudge ideas, the
+idea that works on them is usually not the one that works for most people, and for half of them a different idea works
+at night. It runs Life's real theory judge, off-policy estimator and line checks; the phone's picker is mirrored from
+`core/Bank.kt`, and a test checks the mirror uses the same formula and constants.
+
+**1. Does it find what works on each person?** (how often they left the app after a nudge; 240 simulated nudges per
+person, run in seconds. In real use, about 30 nudges is a week.)
+
+| Policy | Nudges 1-30 | 31-60 | 61-120 | 121-240 |
+|---|---|---|---|---|
+| Random idea each time | 34% | 35% | 35% | 35% |
+| Always "what works for most people" (a fixed app) | 34% | 34% | 34% | 34% |
+| **Life** | **37%** | **39%** | **41%** | **43%** |
+| Knowing the hidden answer (best possible) | 53% | 52% | 53% | 53% |
+
+Life keeps improving while a fixed app stays flat: from nudge 121 on, people leave **26% more often**, and Life names
+each person's best idea for 44% of them after 30 nudges and **73%** after 240. For 86% of the people, the best idea isn't the
+one that works for most people, so an app that doesn't learn never finds it.
+
+**2. Are theories judged right?** 3,521 theories put to Life's real judge on each person's first 60 nudges:
+
+| | |
+|---|---|
+| Kept, and actually true | **324 of 411 (79%)** |
+| Rejected, and actually false | **213 of 230 (93%)** |
+| Clearly false (10+ points worse), but kept anyway | **17 of 1,096** |
+| Not enough evidence yet, so still "testing" | 2,880 |
+
+Without this check, every theory the model wrote would be shown as a fact.
+
+**3. Does the second opinion tell the truth?** Off-policy evaluation, from the logged choice probabilities alone, on
+70 nudges per person (about what I have): each style's estimate is off by **8.6 points** on average, and it picks the
+truly best style for **61%** of people (chance would be 33%).
+
+**4. Do the guards stop bad lines?** A hand-written set of 26 drafts (invented numbers, meter talk, health words, a
+line already sent, a reminder that drifts off what the user asked): **16 of 16 bad ones stopped, 0 of 10 good ones.**
+
+Full report: [docs/BENCHMARK.md](docs/BENCHMARK.md) · code: [`bench/bench.ts`](bench/bench.ts)
 
 ---
 
@@ -430,7 +481,8 @@ See [app/README.md](app/README.md) for permissions and first run.
 5. **See the night shift:** Home → TEST → **Night shift (test)** (up to 2 minutes), then open *Lify's theories about
    you*: theories verified on your results, tomorrow's lines, and "How Lify thought about it".
 6. **See everything that happened:** Settings → Check Lify → *What the watcher did*.
-7. **Run the tests:** `npm test` (backend), `cd app && flutter test` (app). They also run on every push:
+7. **Run the benchmark:** `npm run bench` (Node 22+, no key, no install, about 20 s). See [above](#-benchmark-rerun-it-in-20-seconds).
+8. **Run the tests:** `npm test` (backend), `cd app && flutter test` (app). They also run on every push:
    [GitHub Actions](https://github.com/ayoubna99/life-agent/actions/workflows/tests.yml).
 
 The judging build uses a shared demo backend with a daily cap per user, so a judge's account works on its own.
@@ -541,6 +593,21 @@ changed in Settings.
 
 ---
 
+## 🚧 Known limits
+
+- **One real person so far.** The measured results are mine, from about 70 nudges. The benchmark uses simulated people.
+- **Learning takes time.** In the benchmark, about 60 nudges to name the best idea for half of people; ideas that
+  only work at night take longer, because night is only part of the nudges.
+- **The control group is new.** Too few nudges have been held back to say yet how much a nudge adds over none.
+- **Leaving is what's measured.** Life can see that you left and whether a feed came back within 10 minutes, not what
+  you did instead.
+- **Android only.** iOS doesn't let an app read other apps' usage events or show a card over them.
+- **Some phones kill background apps** (Samsung, Xiaomi). Life has a watchdog and asks for unrestricted battery, but a
+  phone can still delay a card.
+- **The night shift needs the network.** Without it, the phone keeps using the last nudge bank and its own lines.
+
+---
+
 ## 📊 Status
 
 - **Tested end to end on a real Android phone (Samsung):**
@@ -556,3 +623,4 @@ changed in Settings.
 - **License:** [MIT](LICENSE).
 - **Automated tests:** 400+ (backend, Flutter and Kotlin). The Android code compiles against the real Android 15 classes.
 - **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes.
+

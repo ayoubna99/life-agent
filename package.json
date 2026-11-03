@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --no-warnings --test \"tests/*.test.ts\""
+    "test": "node --experimental-strip-types --no-warnings --test \"tests/*.test.ts\"",
+    "bench": "node --experimental-strip-types --no-warnings bench/run.ts"
   },
   "devDependencies": {
     "pdf-lib": "^1.17.1",
