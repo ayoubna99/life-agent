@@ -80,7 +80,7 @@ commit dates, the [day-by-day migrations](supabase/migrations) and the tests sho
 
 ## 🎬 Demo
 
-> **[▶ Watch the 3-minute demo](DEMO_URL)** · **[⬇ Download the APK](https://github.com/ayoubna99/life-agent/releases/latest)**
+> **[▶ Watch the 3-minute demo](https://www.youtube.com/watch?v=qefXEci1jIA)** · **[⬇ Download the APK](https://github.com/ayoubna99/life-agent/releases/latest)**
 > (Android 10+; install it, then follow [How judges can verify](#-how-judges-can-verify))
 
 The demo opens with Jake showing the problem: scrolling at night and the "let's plan tomorrow" notification.
