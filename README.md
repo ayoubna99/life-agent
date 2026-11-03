@@ -55,6 +55,9 @@
 | 🌱 **Day one** | Before Lify knows you, it starts from what tends to work for most people: concrete next steps, short and direct lines. Then it shifts to what works on you. |
 | 🧪 **It learns** | Every night Muse Spark Open reads your whole history, proposes **theories about you**, verifies them against your results, and writes tomorrow's experiment. |
 
+**On my own phone so far:** I left the app after **47%** of Lify's nudges, and it worked out what works on me:
+nudges about my own goal (left 10 of 17 times). [The numbers](#-measured-on-a-real-phone)
+
 Planning your day, alarms and study material are there too, but they serve this loop. The agent's job is to get you
 off the phone and onto what you said matters.
 
@@ -106,15 +109,17 @@ Then it's the real app on a real phone:
 
 ## 📈 Measured on a real phone
 
-A working-system check on one Samsung phone, during development (late October 2026). It shows that the loop runs end
-to end on a real device; it is not a study of whether Life changes anyone's habits.
+One person (the author), one Samsung phone, as of 3 November 2026. This shows the learning loop working on a real
+device; it is an early signal from one person, not a study.
 
 | What | Result |
 |---|---|
-| Nudges shown and measured by the phone (outside demo mode) | **39**: each one logged with its moment, its words and what happened next |
-| Left the app right after the nudge | **18 of 39 (46%)**, measured by Android's usage events. A control group is now built in (about 1 in 10 nudges held back on purpose); once it has enough data, the lab notebook shows the real effect of a nudge. |
-| Night shift, end to end | Muse Spark Open read the history, wrote theories and the nudge bank, and the critic finished **41 s** after the draft was saved |
-| The bank in use | Ideas from the night shift were shown and scored (in demo mode): the "late-night TikTok" idea got the user to leave **2 of 3** times |
+| **Left the app after a nudge** | **33 of 70 nudges (47%)**, measured by Android's usage events, not by the model |
+| **It found what works on me** | Nudges about **my own goal**: I left **10 of 17** times (59%), vs 11 of 26 for my next task and 12 of 27 for what the time costs. Lify rates "my own goal" **75% likely the best** style for me, and now sends more of them |
+| **Left and stayed off** (no feed within 10 minutes, outside demo mode) | **27 of 52** |
+| **Its own check on itself** | Off-policy estimate: Life's mix so far got me to leave 47% of the time; always sending "my own goal" would have been about 56%. That gap is the cost of testing the other styles, and why it now leans on the winner |
+| **Control group** | Just started: 1 nudge held back on purpose so far, too few to compare yet |
+| **Night shift, end to end** | Muse Spark Open read the whole history, wrote theories and tomorrow's nudge bank, and the critic finished **41 s** after the draft |
 
 Every number above comes from the app's own logs; the queries are in [docs/MEASURED.md](docs/MEASURED.md).
 
