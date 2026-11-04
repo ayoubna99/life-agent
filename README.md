@@ -426,7 +426,7 @@ Life steps in after you've been in it for a while.*
 - **Makes what you need:** study sheets as real PDFs and pictures. It reads web pages, PDFs and photos you send, and searches the web with sources.
 - **Your own rules:** "whenever I'm on any app for 30 minutes straight, pull me out" becomes a rule on the phone. Short
   breaks (the screen going off, a quick reply) don't reset the count.
-- **Step-down targets:** each distracting app's daily target goes down one earned step at a time (see Impact), with
+- **Step-down targets:** each distracting app's daily target goes down one earned step at a time (see [Why it matters](#-why-it-matters)), with
   Muse Spark Open's trade for the minutes you win back.
 - **Knows your nights:** when the phone went quiet and was picked up again, measured from unlock events.
   "Phone down at 03:30 last night. Tonight?"
@@ -435,6 +435,23 @@ Life steps in after you've been in it for a while.*
 - **Talks:** voice in (Muse Voice Transcribe), voice out.
 - **Check Lify:** a self-diagnosis screen showing the account, server, watcher, battery and pop-up permissions, your last
   nights, and a log of every nudge (shown as a card or a notification, or skipped and why), with Fix buttons.
+
+**The small details that make it work:**
+
+- **A night is measured from unlocks, not from the screen.** A notification lighting up the screen, an alarm or a call
+  doesn't count as you picking the phone up.
+- **Your nights are part of what it studies.** The night shift reads when the phone went down and when it was picked up
+  again, next to every nudge and what you did after it.
+- **Morning is not night.** Every result is filed by time of day, weekday or weekend, how far over the limit you were,
+  and whether a task was coming up, so what works at 1 AM is never assumed to work at 9 AM.
+- **A short break doesn't end a session.** Locking the phone for a moment or a quick reply (under 3 minutes) still
+  counts as one session. Leaving the app but opening a feed again within 10 minutes doesn't count as leaving.
+- **It knows when you came on purpose.** "Lost intent" looks at the first app you opened after unlocking: if it was
+  already a feed, Lify stays quiet.
+- **Your exit point is yours.** It's the middle of your finished sessions on that app over the last 14 days, and it's
+  only used once there are at least 5 of them.
+- **It measures itself.** About 1 in 10 nudges is held back on purpose, to see what you'd do without one.
+- **It doesn't nag.** Never two cards within 20 minutes, across all apps, and at most 4 limit nudges per app a day.
 
 ---
 
