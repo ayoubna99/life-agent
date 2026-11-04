@@ -40,15 +40,15 @@
 
 ---
 
-> It's 1 AM. You said you'd be off your phone by 11. You've been on TikTok for two hours.
+> It's 1 AM. You said you'd be off your phone by 11. You've been doomscrolling for two hours.
 >
-> A card slides over the video: **"Gym at 6. TikTok will still be here."** One button: **Let's hit the gym!**.
+> A card slides over the video: **"Gym at 6. The feed will still be here."** One button: **Let's hit the gym!**.
 >
 > You've never seen that sentence before. Lify wrote it last night, after studying the last 30 nudges it sent you
 > and finding the ones that actually made you put the phone down.
 
 **Life is not a planner with a chatbot on top.** Screen-time apps count your minutes and block apps. Life also
-notices *why* you picked up the phone (you opened Gmail, and three minutes later you're on TikTok) and hands you a way
+notices *why* you picked up the phone (you opened Gmail, and three minutes later you're deep in a feed) and hands you a way
 back. Every night it tests which nudges actually get *you* off the feed, and keeps only what works.
 
 It is a closed loop that runs on your phone every day:
@@ -57,7 +57,7 @@ It is a closed loop that runs on your phone every day:
 |---|---|
 | 👀 **It watches** | Real screen time from Android's usage events: which app, for how long, and when your phone went quiet last night. |
 | ✋ **It steps in** | A personal card on top of the app you're stuck in, at the right moment, with one tap to get out. |
-| 📏 **It measures** | Did you leave the app right after (within 2 minutes; 20 seconds in demo mode), and stay off the feeds? Going straight back to TikTok or Instagram within 10 minutes doesn't count. Your phone's own usage data says so. |
+| 📏 **It measures** | Did you leave the app right after (within 2 minutes; 20 seconds in demo mode), and stay off the feeds? Going straight back to a feed within 10 minutes doesn't count. Your phone's own usage data says so. |
 | 🌱 **Day one** | Before Lify knows you, it starts from what tends to work for most people: concrete next steps, short and direct lines. Then it shifts to what works on you. |
 | 🧪 **It learns** | Every night Muse Spark Open reads your whole history, proposes **theories about you**, verifies them against your results, and writes tomorrow's experiment. |
 
@@ -105,7 +105,7 @@ commit dates, the [day-by-day migrations](supabase/migrations) and the tests sho
 The demo opens with Jake showing the problem: scrolling at night and the "let's plan tomorrow" notification.
 Then it's the real app on a real phone:
 - planning tomorrow by voice, with a PDF in and a PDF out;
-- a nudge card sliding over TikTok, and **Pull me out**;
+- a nudge card sliding over the app you're stuck in, and **Pull me out**;
 - Your path (the step-down targets);
 - the night shift, and Lify's theories verified on real results.
 
@@ -243,19 +243,19 @@ night: Muse Spark Open proposes theories about you, and every one is verified ag
  whole ──►│              ONE request, 1M-token context, no retrieval, no summaries in between        │
  history  │ 2. THEORIZE  testable claims: WHEN (app, time of day, weekday/weekend, how far over the  │
           │              limit, task coming up) + WHAT (tone, topic) works better than the rest       │
-          │              e.g. "TikTok, at night, way over: blunt lines about tomorrow's task"         │
+          │              e.g. "a feed, at night, way over: blunt lines about tomorrow's task"         │
           │ 2b. VERIFY   on your real results: Beta posteriors for "with it" vs "without it" in those │
           │              exact moments → P(true). ≥90% kept, ≤10% rejected. "left 5/7 vs 1/6"         │
           │ 3. DESIGN    tomorrow's NUDGE BANK: ~30 short lines grouped by ANGLE (the idea behind     │
           │              them). Winning angles get new words; 1-2 new angles to test; losers dropped  │
           │ 4. CRITIC    a second pass plays your "inner skeptic" (reasoning "low") reads each line   │
-          │              as you'll see it and cuts the generic, preachy, repeated or garbled ones    │
+          │              as you'll see it and cuts the generic, preachy, repeated or garbled ones     │
           │ 5. CHECK     ≤12 words, no minute counts, no "you're at your limit", no health language,  │
           │              never a line you've already seen. Every line is checked before it's used.    │
           └──────────────────────────────────────┬─────────────────────────────────────────────────┘
                                                  ▼  the bank goes to the phone
           ┌───────────── DURING THE DAY · on the phone, instant, works offline ───────────────────────┐
-          │ stuck on TikTok → Thompson sampling over ANGLES picks the idea most likely to work on you │
+          │ stuck scrolling → Thompson sampling over ANGLES picks the idea most likely to work on you │
           │ HERE (this app, this time of day) → shows a line from it you've never seen → measures     │
           │ whether you left. The idea that works keeps coming back, always in new words.             │
           └──────────────────────────────────────┬─────────────────────────────────────────────────┘
@@ -265,13 +265,13 @@ night: Muse Spark Open proposes theories about you, and every one is verified ag
 In the app, **"Lify's theories about you"** says when it was written and what it read ("written at 22:48 by Muse Spark
 Open after reading 39 nudges and 7 nights in one request"), shows how each theory moved since last night ("testing 54% →
 kept 93%", or "new tonight"), and lists the lines the critic threw out, crossed out, with its reason. Every theory shows
-the probability it's true, computed from your results, and the counts behind it ("Checked on your data: left 5/7 with it vs 1/6 without (TikTok, at night)"). When the data disagrees with
+the probability it's true, computed from your results, and the counts behind it ("Checked on your data: left 5/7 with it vs 1/6 without (Instagram, at night)"). When the data disagrees with
 the first guess, it says so: *Lify guessed "kept"; your results say "rejected"*. You also see tomorrow's ideas with "you left 4
 of 6 times", Lify's **starting assumptions** about most people, and **"How Lify thought about it"**: an excerpt of the
 open model's own visible reasoning.
 
-**Why the hour and the app matter:** TikTok at 1 AM on a weekday, 40 minutes over the limit, the night before the gym,
-is not TikTok on a Sunday morning. Every nudge is logged with its moment (app, time of day, weekday or weekend, near or
+**Why the hour and the app matter:** scrolling at 1 AM on a weekday, 40 minutes over the limit, the night before the gym,
+is not scrolling on a Sunday morning. Every nudge is logged with its moment (app, time of day, weekday or weekend, near or
 way over the limit, important task within 2 hours) and the tone and topic of the line. Theories are checked only on the
 moments they are about.
 
@@ -294,7 +294,7 @@ Code: [`nightshift.ts`](supabase/functions/_shared/nightshift.ts) · [`theories.
   own goal: the aim is less, not zero. When a target drops, **Muse Spark Open** writes what to do
   with the minutes you won back, from your own plan ("25 minutes back: two pages of your thesis at 22:15"). That is an
   implementation intention, and the nudge at the target uses it. Home shows it as **Your path**:
-  *TikTok: 3 h → 2 h 35 → today 2 h 10 · goal 30 min*.
+  *Instagram: 3 h → 2 h 35 → today 2 h 10 · goal 30 min*.
 - **The problem everyone has:** hours a day lost to scrolling, and the knowledge that it's happening doesn't stop it.
   Screen-time apps show charts or block apps; people ignore the charts and switch the blocker off.
 - **Life doesn't lock your apps: it gets you to leave them yourself.** A personal line at the right moment and one tap
@@ -302,7 +302,7 @@ Code: [`nightshift.ts`](supabase/functions/_shared/nightshift.ts) · [`theories.
 - **It works on what you care about:** every nudge points at your own goal, tomorrow's plan, or your real phone-down
   time last night ("Phone down at 03:30 last night. Tonight?"). Never a generic "take a break".
 - **It respects you:** at most 4 nudges per app per day, at least 20 minutes apart, spaced further out the longer you go
-  over (+15, +45, +105 minutes). A rule you set ("every 30 minutes on TikTok, remind me to do 10 push-ups") fires on
+  over (+15, +45, +105 minutes). A rule you set ("every 30 minutes on any app, remind me to do 10 push-ups") fires on
   top, in the same 20-minute spacing.
 
 ---
@@ -315,8 +315,8 @@ only if every number in it is one of the real facts.
 
 | Moment | When | Example | Button |
 |---|---|---|---|
-| **Lost intent** | You picked the phone up for one app and drifted into feeds | *"You picked up your phone for WhatsApp 14 minutes ago. Since then: Instagram, then TikTok."* | **Back to WhatsApp** |
-| **Your exit point** | This session passed the minute you usually leave on your own | *"You usually leave TikTok around minute 6. This is minute 9."* | **Open:** your next task |
+| **Lost intent** | You picked the phone up for one app and drifted into feeds | *"You picked up your phone for WhatsApp 14 minutes ago. Since then: Instagram, then YouTube."* | **Back to WhatsApp** |
+| **Your exit point** | This session passed the minute you usually leave on your own | *"You usually leave YouTube around minute 6. This is minute 9."* | **Open:** your next task |
 | **Planned now** | Your own plan says this time is for a task | *"You planned 'Finish chapter 3' for 21:00. It's 21:10."* | **Open: Finish chapter 3** |
 | **Phone-down** | You're past the phone-down time you chose | *"You said phone down at 23:00. Tomorrow starts with Gym at 07:00."* | **Done for tonight** |
 
@@ -462,9 +462,9 @@ you overnight and write every line you see. The phone and the server give them s
                                                 │
                                                 ▼  the bank and today's targets go to the phone
 ┌─ DAY · on your phone (Kotlin), instant, works offline ─────────────────────────────────────────┐
-│ usage watcher sees TikTok at 1 AM, 40 min over today's target                                  │
+│ usage watcher sees a feed at 1 AM, 40 min over today's target                                  │
 │ → Thompson sampling picks the idea most likely to work on you HERE → a line you've never seen  │
-│ → the card slides over TikTok: "Gym at 6. TikTok will still be here."  [Pull me out]           │
+│ → the card slides over the feed: "Gym at 6. The feed will still be here."  [Pull me out]       │
 │ → no line fits? MUSE SPARK OPEN writes one live (reasoning "low", lands in seconds)            │
 │ → did you leave? measured from Android's usage events                                          │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
