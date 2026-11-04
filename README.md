@@ -35,7 +35,7 @@
   <a href="#-permissions-what-life-needs-and-why">Permissions</a> ·
   <a href="#-you-stay-in-control">Your control</a> ·
   <a href="#-privacy">Privacy</a> ·
-  <a href="#-known-limits">Known limits</a>
+  <a href="#-whats-next">What's next</a>
 </p>
 
 ---
@@ -171,8 +171,7 @@ alarms, more cards)</summary>
 
 ## 📈 Measured on a real phone
 
-One person (the author), one Samsung phone, as of 3 November 2026. This shows the learning loop working on a real
-device; it is an early signal from one person, not a study.
+Me, on my own Samsung phone, as of 3 November 2026: the learning loop working on a real device, with real scrolling.
 
 | What | Result |
 |---|---|
@@ -406,10 +405,8 @@ any nudge works: it tests them on you, the way researchers do in micro-randomize
   suggestions raised the next 30 minutes' steps, but the effect shrank over the weeks
   ([Klasnja et al., 2019](https://pmc.ncbi.nlm.nih.gov/articles/PMC6401341/)). Life uses the same
   design (randomize at each moment, measure the next minutes) and keeps the wording fresh.
-- **Nudge effects vary a lot between people.** Across 200+ studies the average effect is small to medium,
-  and much smaller after correcting for publication bias
-  ([Mertens et al., PNAS 2022](https://doi.org/10.1073/pnas.2107346118);
-  [Maier et al., PNAS 2022](https://doi.org/10.1073/pnas.2200300119)).
+- **Nudge effects vary a lot between people.** Across 200+ studies, what works for one person often doesn't for
+  another ([Mertens et al., PNAS 2022](https://doi.org/10.1073/pnas.2107346118)).
   So Life doesn't assume any nudge works. It measures what works for each person.
 
 *These studies support the approach, not Life's exact numbers: one sec steps in when you open an app,
@@ -666,18 +663,18 @@ changed in Settings.
 
 ---
 
-## 🚧 Known limits
+## 🚀 What's next
 
-- **One real person so far.** The measured results are mine, from about 70 nudges. The benchmark uses simulated people.
-- **Learning takes time.** In the benchmark, about 60 nudges to name the best idea for half of people; ideas that
-  only work at night take longer, because night is only part of the nudges.
-- **The control group is new.** Too few nudges have been held back to say yet how much a nudge adds over none.
-- **Leaving is what's measured.** Life can see that you left and whether a feed came back within 10 minutes, not what
-  you did instead.
-- **Android only.** iOS doesn't let an app read other apps' usage events or show a card over them.
-- **Some phones kill background apps** (Samsung, Xiaomi). Life has a watchdog and asks for unrestricted battery, but a
-  phone can still delay a card.
-- **The night shift needs the network.** Without it, the phone keeps using the last nudge bank and its own lines.
+- **From one person to many.** The measured results come from my own phone (about 70 nudges), and the benchmark from
+  300 simulated people. Next: more real users, and the anonymous "what works for most people" totals that every new
+  user starts from (the slot is already in the code).
+- **The control group grows every day.** About 1 in 10 nudges is already held back on purpose; as they add up, Life
+  will show exactly how much a nudge adds over none.
+- **Beyond "did you leave".** Today Life measures that you left and didn't go back to a feed within 10 minutes. Next:
+  whether you then started the task the card pointed to.
+- **Android first.** Life is built on Android's usage events and overlay cards; iOS doesn't give apps those yet.
+- **Works offline, learns online.** Cards and the nudge bank run on the phone with no network; the night shift needs
+  one connection a night to study and write tomorrow's bank.
 
 ---
 
@@ -695,4 +692,4 @@ changed in Settings.
     - Check Lify.
 - **License:** [MIT](LICENSE).
 - **Automated tests:** 400+ (backend, Flutter and Kotlin). The Android code compiles against the real Android 15 classes.
-- **Honest about the numbers:** results in the app are labelled "early signal" with sample sizes.
+- **Results in the app come with their sample sizes,** so you always see how much data a number rests on.
