@@ -47,7 +47,11 @@
 > You've never seen that sentence before. Lify wrote it last night, after studying the last 30 nudges it sent you
 > and finding the ones that actually made you put the phone down.
 
-**Life is not a planner with a chatbot on top.** It is a closed loop that runs on your phone every day:
+**Life is not a planner with a chatbot on top.** Screen-time apps count your minutes and block apps. Life also
+notices *why* you picked up the phone (you opened Gmail, and three minutes later you're on TikTok) and hands you a way
+back. Every night it tests which nudges actually get *you* off the feed, and keeps only what works.
+
+It is a closed loop that runs on your phone every day:
 
 | | |
 |---|---|
